@@ -18,7 +18,7 @@ from typing import Iterator
 
 from scapy.error import Scapy_Exception
 from scapy.layers.inet import ICMP, IP, TCP, UDP
-from scapy.layers.inet6 import IPv6
+from scapy.layers.inet6 import ICMPv6EchoRequest, IPv6
 from scapy.utils import PcapReader
 
 # TCP flag bits
@@ -89,6 +89,9 @@ def _to_record(index: int, pkt) -> PacketRecord | None:
         return PacketRecord(proto="UDP", sport=u.sport, dport=u.dport, **common)
     if ICMP in pkt:
         return PacketRecord(proto="ICMP", icmp_type=int(pkt[ICMP].type), **common)
+    if ICMPv6EchoRequest in pkt:
+        # Normalised to ICMP type 8 so the same flood rule covers IPv4 and IPv6.
+        return PacketRecord(proto="ICMP", icmp_type=8, **common)
     return PacketRecord(proto="OTHER", **common)
 
 

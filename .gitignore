@@ -15,6 +15,8 @@ evidence/
 !pcaps/
 pcaps/*.pcap
 pcaps/*.pcapng
+!pcaps/sample_*.pcap
+
 
 # Python bytecode & cache
 __pycache__/

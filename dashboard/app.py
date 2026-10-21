@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import csv
 import io
 import os
+import secrets
 import sys
+import uuid
 from pathlib import Path
 
 from flask import (
@@ -28,7 +29,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.analyze import analyze
 from src.config import load_config
-from src.db import get_alert_by_id, get_alerts, get_summary_stats, init_db, insert_alert
+from src.db import get_alert_by_id, get_alerts, get_summary_stats, init_db
+from src.export import write_alerts_csv
+from src.store import store_alerts
 
 app = Flask(
     __name__,
@@ -36,7 +39,7 @@ app = Flask(
     static_folder=str(PROJECT_ROOT / "dashboard" / "static"),
 )
 
-app.secret_key = os.environ.get("BANTAYNET_SECRET_KEY", "bantaynet-lab-secret-key-38291")
+app.secret_key = os.environ.get("BANTAYNET_SECRET_KEY") or secrets.token_hex(32)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB maximum upload
 ALLOWED_EXTENSIONS = {".pcap", ".pcapng"}
 
@@ -47,6 +50,14 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 def is_allowed_file(filename: str) -> bool:
     ext = Path(filename).suffix.lower()
     return ext in ALLOWED_EXTENSIONS
+
+
+def _resolve_evidence(stored: str | None) -> Path | None:
+    """Turn a stored (project-relative or legacy absolute) evidence path into a real path."""
+    if not stored:
+        return None
+    p = Path(stored)
+    return p if p.is_absolute() else PROJECT_ROOT / p
 
 
 @app.route("/")
@@ -76,8 +87,8 @@ def alert_detail(alert_id: int):
         abort(404, description=f"Alert #{alert_id} not found")
 
     evidence_packets = []
-    evidence_path = alert.get("evidence_file")
-    if evidence_path and Path(evidence_path).is_file():
+    evidence_path = _resolve_evidence(alert.get("evidence_file"))
+    if evidence_path and evidence_path.is_file():
         try:
             from scapy.layers.inet import ICMP, IP, TCP, UDP
             from scapy.utils import PcapReader
@@ -139,30 +150,14 @@ def upload_pcap():
         flash("Invalid file type! Only .pcap and .pcapng files are permitted.", "error")
         return redirect(url_for("index"))
 
-    dest_path = UPLOAD_DIR / filename
+    dest_path = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{filename}"  # never overwrite earlier uploads
     file.save(str(dest_path))
 
     try:
         cfg = load_config()
         result = analyze(dest_path, cfg=cfg)
 
-        init_db()
-        for a in result.alerts:
-            insert_alert(
-                rule=a.rule,
-                severity=a.severity,
-                src_ip=a.src,
-                dst_ip=a.dst,
-                packet_time=a.first_ts,
-                description=a.summary,
-                evidence_file=a.evidence_path,
-                source_pcap=filename,
-                protocol="TCP" if "TCP" in a.summary else ("ICMP" if "ICMP" in a.summary else "OTHER"),
-                packet_count=a.packet_count,
-                details=a.details,
-                dst_port=a.dst_port,
-            )
-
+        store_alerts(result.alerts, filename)
 
         flash(
             f"Successfully analyzed '{filename}': {result.stats.parsed} packets parsed, {len(result.alerts)} alert(s) detected.",
@@ -180,8 +175,8 @@ def download_evidence(alert_id: int):
     if not alert or not alert.get("evidence_file"):
         abort(404, description="No evidence file associated with this alert")
 
-    file_path = Path(alert["evidence_file"])
-    if not file_path.is_file():
+    file_path = _resolve_evidence(alert["evidence_file"])
+    if file_path is None or not file_path.is_file():
         abort(404, description="Evidence file does not exist on disk")
 
     return send_file(
@@ -202,21 +197,7 @@ def export_csv():
     alerts = get_alerts(rule=rule, severity=severity, src_ip=src_ip, search=search, limit=5000)
 
     output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "ID", "Detected At", "Packet Time", "Rule", "Severity",
-        "Source IP", "Destination IP", "Target Port", "Protocol", "Description",
-        "Source PCAP", "Packet Count", "Evidence File"
-    ])
-
-    for a in alerts:
-        writer.writerow([
-            a["id"], a["detected_at"], a["packet_time"], a["rule"], a["severity"],
-            a["src_ip"], a["dst_ip"], a.get("dst_port", "-"), a["protocol"], a["description"],
-            a["source_pcap"], a["packet_count"], a["evidence_file"]
-        ])
-
-
+    write_alerts_csv(output, alerts)
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -232,4 +213,4 @@ def run_dashboard(host: str = "127.0.0.1", port: int = 5000, debug: bool = False
 
 
 if __name__ == "__main__":
-    run_dashboard(debug=True)
+    run_dashboard(debug=os.environ.get("BANTAYNET_DEBUG") == "1")

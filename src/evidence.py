@@ -17,6 +17,15 @@ from src.alerts import Alert
 
 # Keep the number of simultaneously open output files well under OS limits.
 MAX_OPEN_WRITERS = 200
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _store_path(path: Path) -> str:
+    """Project-relative POSIX path when possible, so the DB survives moving the project."""
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _safe(text: str) -> str:
@@ -53,4 +62,4 @@ def write_evidence(pcap_path: str | Path, alerts: list[Alert], out_dir: str | Pa
                 w.close()
 
         for path, (_, alert) in zip(paths, batch):
-            alert.evidence_path = str(path)
+            alert.evidence_path = _store_path(path)

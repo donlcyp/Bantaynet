@@ -10,6 +10,12 @@ port_scan:
   window_seconds: 5          # sliding window length
   distinct_ports: 50         # one src probing >= this many distinct dst ports on one dst within the window
 
+slow_scan:
+  enabled: true
+  severity: medium
+  window_seconds: 300        # long window catches low-and-slow probing
+  distinct_ports: 20         # one src probing >= this many distinct dst ports on one dst within the window
+
 syn_burst:
   enabled: true
   severity: high
