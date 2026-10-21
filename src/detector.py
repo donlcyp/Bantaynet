@@ -95,6 +95,8 @@ class Detector:
         if rec.proto == "TCP":
             if c.port_scan.enabled:
                 self._port_scan(rec)
+            if c.slow_scan.enabled:
+                self._slow_scan(rec)
             if c.syn_burst.enabled:
                 self._syn_burst(rec)
             if c.suspicious_flags.enabled:
@@ -176,6 +178,27 @@ class Detector:
             ports = set(w.counts)
             inc = self._open_incident(key, "port_scan", r.severity, rec.src, rec.dst, rec, w)
             inc.ports = ports
+            # A fast scan supersedes any slow-scan tracking for the same pair.
+            self._open.pop(("slow_scan", rec.src, rec.dst), None)
+            self._windows.pop(("slow_scan", rec.src, rec.dst), None)
+
+    def _slow_scan(self, rec: PacketRecord) -> None:
+        if not rec.has_flags(clear=ACK | RST):
+            return
+        if ("port_scan", rec.src, rec.dst) in self._open:
+            return  # already reported as a fast scan
+        key = ("slow_scan", rec.src, rec.dst)
+        if inc := self._open.get(key):
+            self._extend(inc, rec)
+            inc.ports.add(rec.dport)
+            return
+        r = self.cfg.slow_scan
+        w = self._window(key, r.window_seconds)
+        w.add(rec.ts, rec.dport, rec.index)
+        if w.distinct >= r.distinct_ports:
+            ports = set(w.counts)
+            inc = self._open_incident(key, "slow_scan", r.severity, rec.src, rec.dst, rec, w)
+            inc.ports = ports
 
     def _syn_burst(self, rec: PacketRecord) -> None:
         if not rec.has_flags(set_=SYN, clear=ACK | RST):
@@ -251,6 +274,9 @@ class Detector:
         if inc.rule == "port_scan":
             details = {"distinct_ports": len(ports), "sample_ports": ports[:20]}
             summary = f"{inc.src} probed {len(ports)} distinct TCP ports on {inc.dst} in {dur:.1f}s"
+        elif inc.rule == "slow_scan":
+            details = {"distinct_ports": len(ports), "sample_ports": ports[:20]}
+            summary = f"{inc.src} slowly probed {len(ports)} distinct TCP ports on {inc.dst} over {dur:.0f}s"
         elif inc.rule == "syn_burst":
             rate = inc.count / dur if dur > 0 else float(inc.count)
             details = {"dport": ports[0], "syn_count": inc.count, "rate_per_sec": round(rate, 1)}
@@ -287,5 +313,6 @@ class Detector:
             first_ts=inc.first_ts, last_ts=inc.last_ts, packet_count=inc.count,
             summary=summary, details=details, evidence_indexes=inc.indexes,
             dst_port=dst_port_str,
+            protocol="ICMP" if inc.rule == "icmp_flood" else "TCP",
         )
 

@@ -34,6 +34,14 @@ DEFAULT_MYSQL_CONFIG = {
 ACTIVE_ENGINE: str | None = None
 
 
+def _mark_sqlite_fallback(exc: Exception) -> None:
+    """Warn once, then stay on SQLite for the rest of this process."""
+    global ACTIVE_ENGINE
+    if ACTIVE_ENGINE != "sqlite":
+        logger.warning("MySQL unavailable (%s); using SQLite for this session", exc)
+    ACTIVE_ENGINE = "sqlite"
+
+
 def _get_active_engine(db_path: Path | str | None = None) -> tuple[str, dict[str, Any]]:
     """Determine whether to use MySQL or SQLite based on configuration and arguments."""
     if db_path is not None:
@@ -129,7 +137,7 @@ def init_db(db_path: Path | str | None = None) -> str:
             conn.close()
             return "mysql"
         except Exception as exc:
-            logger.warning("Could not connect to XAMPP MySQL (%s); falling back to SQLite", exc)
+            _mark_sqlite_fallback(exc)
 
     # SQLite fallback / default
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
@@ -240,7 +248,7 @@ def insert_alert(
             conn.close()
             return int(last_id)
         except Exception as exc:
-            logger.warning("MySQL insert failed (%s); falling back to SQLite", exc)
+            _mark_sqlite_fallback(exc)
 
     # SQLite
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
@@ -323,7 +331,7 @@ def get_alerts(
                 alerts.append(d)
             return alerts
         except Exception as exc:
-            logger.warning("MySQL fetch failed (%s); using SQLite", exc)
+            _mark_sqlite_fallback(exc)
 
     # SQLite
     query = "SELECT * FROM alerts WHERE 1=1"
@@ -383,7 +391,7 @@ def get_alert_by_id(alert_id: int, db_path: Path | str | None = None) -> dict[st
                 d["dst_port"] = _extract_port(d.get("details")) or "-"
             return d
         except Exception as exc:
-            logger.warning("MySQL get_alert_by_id failed (%s); using SQLite", exc)
+            _mark_sqlite_fallback(exc)
 
     # SQLite
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
@@ -430,7 +438,7 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
                 "by_rule": by_rule,
             }
         except Exception as exc:
-            logger.warning("MySQL get_summary_stats failed (%s); using SQLite", exc)
+            _mark_sqlite_fallback(exc)
 
     # SQLite
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:

@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 import time
 from pathlib import Path
 
 from src.analyze import analyze
 from src.config import load_config
-from src.db import clear_alerts, get_alerts, init_db, insert_alert
+from src.db import clear_alerts, get_alerts
+from src.export import write_alerts_csv
+from src.store import store_alerts
+
+
+def _export_all(path: Path) -> int:
+    """Write every stored alert to ``path`` as CSV; return the row count."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        return write_alerts_csv(fh, get_alerts(limit=100_000))
 
 
 def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | None) -> int:
@@ -23,24 +31,7 @@ def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | N
     result = analyze(pcap_path, cfg=cfg)
     elapsed = time.perf_counter() - start_time
 
-    # Store alerts to SQLite
-    init_db()
-    for alert in result.alerts:
-        insert_alert(
-            rule=alert.rule,
-            severity=alert.severity,
-            src_ip=alert.src,
-            dst_ip=alert.dst,
-            packet_time=alert.first_ts,
-            description=alert.summary,
-            evidence_file=alert.evidence_path,
-            source_pcap=str(pcap_path.name),
-            protocol="TCP" if "TCP" in alert.summary else ("ICMP" if "ICMP" in alert.summary else "OTHER"),
-            packet_count=alert.packet_count,
-            details=alert.details,
-            dst_port=alert.dst_port,
-        )
-
+    store_alerts(result.alerts, pcap_path.name)
 
     # Print summary table
     print("\n" + "=" * 65)
@@ -77,23 +68,8 @@ def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | N
     print("=" * 65 + "\n")
 
     if export_path:
-        export_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(export_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "ID", "Detected At", "Packet Time", "Rule", "Severity",
-                "Source IP", "Destination IP", "Protocol", "Description",
-                "Evidence File", "Source PCAP"
-            ])
-            all_alerts = get_alerts(limit=1000)
-            for row in all_alerts:
-                writer.writerow([
-                    row["id"], row["detected_at"], row["packet_time"],
-                    row["rule"], row["severity"], row["src_ip"], row["dst_ip"],
-                    row["protocol"], row["description"], row["evidence_file"],
-                    row["source_pcap"]
-                ])
-        print(f"[+] Exported alerts to: {export_path}")
+        n = _export_all(export_path)
+        print(f"[+] Exported {n} stored alert(s) (all runs) to: {export_path}")
 
     return 0
 
@@ -116,23 +92,8 @@ def main() -> int:
 
     if not args.pcap:
         if args.export:
-            # Export without analyzing new pcap
-            args.export.parent.mkdir(parents=True, exist_ok=True)
-            with open(args.export, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "ID", "Detected At", "Packet Time", "Rule", "Severity",
-                    "Source IP", "Destination IP", "Protocol", "Description",
-                    "Evidence File", "Source PCAP"
-                ])
-                for row in get_alerts(limit=5000):
-                    writer.writerow([
-                        row["id"], row["detected_at"], row["packet_time"],
-                        row["rule"], row["severity"], row["src_ip"], row["dst_ip"],
-                        row["protocol"], row["description"], row["evidence_file"],
-                        row["source_pcap"]
-                    ])
-            print(f"[+] Exported alerts to: {args.export}")
+            n = _export_all(args.export)
+            print(f"[+] Exported {n} stored alert(s) to: {args.export}")
             return 0
         parser.print_help()
         return 1

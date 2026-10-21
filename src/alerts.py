@@ -20,8 +20,8 @@ class Alert:
     details: dict[str, Any] = field(default_factory=dict)
     evidence_indexes: list[int] = field(default_factory=list, repr=False)
     evidence_path: str | None = None
-    src_port: int | None = None
-    dst_port: str | None = None
+    protocol: str = "TCP"     # "TCP" | "UDP" | "ICMP" (set by the rule, never guessed from text)
+    dst_port: str | None = None   # display label, e.g. "80" or "Multiple (200 ports)"
 
     @property
     def duration(self) -> float:

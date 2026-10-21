@@ -1,0 +1,711 @@
+diff --git a/dashboard/app.py b/dashboard/app.py
+index b921b54..e24391e 100644
+--- a/dashboard/app.py
++++ b/dashboard/app.py
+@@ -2,10 +2,11 @@
+ 
+ from __future__ import annotations
+ 
+-import csv
+ import io
+ import os
++import secrets
+ import sys
++import uuid
+ from pathlib import Path
+ 
+ from flask import (
+@@ -28,7 +29,9 @@ if str(PROJECT_ROOT) not in sys.path:
+ 
+ from src.analyze import analyze
+ from src.config import load_config
+-from src.db import get_alert_by_id, get_alerts, get_summary_stats, init_db, insert_alert
++from src.db import get_alert_by_id, get_alerts, get_summary_stats, init_db
++from src.export import write_alerts_csv
++from src.store import store_alerts
+ 
+ app = Flask(
+     __name__,
+@@ -36,7 +39,7 @@ app = Flask(
+     static_folder=str(PROJECT_ROOT / "dashboard" / "static"),
+ )
+ 
+-app.secret_key = os.environ.get("BANTAYNET_SECRET_KEY", "bantaynet-lab-secret-key-38291")
++app.secret_key = os.environ.get("BANTAYNET_SECRET_KEY") or secrets.token_hex(32)
+ app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB maximum upload
+ ALLOWED_EXTENSIONS = {".pcap", ".pcapng"}
+ 
+@@ -49,6 +52,14 @@ def is_allowed_file(filename: str) -> bool:
+     return ext in ALLOWED_EXTENSIONS
+ 
+ 
++def _resolve_evidence(stored: str | None) -> Path | None:
++    """Turn a stored (project-relative or legacy absolute) evidence path into a real path."""
++    if not stored:
++        return None
++    p = Path(stored)
++    return p if p.is_absolute() else PROJECT_ROOT / p
++
++
+ @app.route("/")
+ def index():
+     rule = request.args.get("rule", "").strip() or None
+@@ -76,8 +87,8 @@ def alert_detail(alert_id: int):
+         abort(404, description=f"Alert #{alert_id} not found")
+ 
+     evidence_packets = []
+-    evidence_path = alert.get("evidence_file")
+-    if evidence_path and Path(evidence_path).is_file():
++    evidence_path = _resolve_evidence(alert.get("evidence_file"))
++    if evidence_path and evidence_path.is_file():
+         try:
+             from scapy.layers.inet import ICMP, IP, TCP, UDP
+             from scapy.utils import PcapReader
+@@ -139,30 +150,14 @@ def upload_pcap():
+         flash("Invalid file type! Only .pcap and .pcapng files are permitted.", "error")
+         return redirect(url_for("index"))
+ 
+-    dest_path = UPLOAD_DIR / filename
++    dest_path = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{filename}"  # never overwrite earlier uploads
+     file.save(str(dest_path))
+ 
+     try:
+         cfg = load_config()
+         result = analyze(dest_path, cfg=cfg)
+ 
+-        init_db()
+-        for a in result.alerts:
+-            insert_alert(
+-                rule=a.rule,
+-                severity=a.severity,
+-                src_ip=a.src,
+-                dst_ip=a.dst,
+-                packet_time=a.first_ts,
+-                description=a.summary,
+-                evidence_file=a.evidence_path,
+-                source_pcap=filename,
+-                protocol="TCP" if "TCP" in a.summary else ("ICMP" if "ICMP" in a.summary else "OTHER"),
+-                packet_count=a.packet_count,
+-                details=a.details,
+-                dst_port=a.dst_port,
+-            )
+-
++        store_alerts(result.alerts, filename)
+ 
+         flash(
+             f"Successfully analyzed '{filename}': {result.stats.parsed} packets parsed, {len(result.alerts)} alert(s) detected.",
+@@ -180,8 +175,8 @@ def download_evidence(alert_id: int):
+     if not alert or not alert.get("evidence_file"):
+         abort(404, description="No evidence file associated with this alert")
+ 
+-    file_path = Path(alert["evidence_file"])
+-    if not file_path.is_file():
++    file_path = _resolve_evidence(alert["evidence_file"])
++    if file_path is None or not file_path.is_file():
+         abort(404, description="Evidence file does not exist on disk")
+ 
+     return send_file(
+@@ -202,21 +197,7 @@ def export_csv():
+     alerts = get_alerts(rule=rule, severity=severity, src_ip=src_ip, search=search, limit=5000)
+ 
+     output = io.StringIO()
+-    writer = csv.writer(output)
+-    writer.writerow([
+-        "ID", "Detected At", "Packet Time", "Rule", "Severity",
+-        "Source IP", "Destination IP", "Target Port", "Protocol", "Description",
+-        "Source PCAP", "Packet Count", "Evidence File"
+-    ])
+-
+-    for a in alerts:
+-        writer.writerow([
+-            a["id"], a["detected_at"], a["packet_time"], a["rule"], a["severity"],
+-            a["src_ip"], a["dst_ip"], a.get("dst_port", "-"), a["protocol"], a["description"],
+-            a["source_pcap"], a["packet_count"], a["evidence_file"]
+-        ])
+-
+-
++    write_alerts_csv(output, alerts)
+     return Response(
+         output.getvalue(),
+         mimetype="text/csv",
+@@ -232,4 +213,4 @@ def run_dashboard(host: str = "127.0.0.1", port: int = 5000, debug: bool = False
+ 
+ 
+ if __name__ == "__main__":
+-    run_dashboard(debug=True)
++    run_dashboard(debug=os.environ.get("BANTAYNET_DEBUG") == "1")
+diff --git a/rules/rules.yaml b/rules/rules.yaml
+index c44e244..5dd702f 100644
+--- a/rules/rules.yaml
++++ b/rules/rules.yaml
+@@ -10,6 +10,12 @@ port_scan:
+   window_seconds: 5          # sliding window length
+   distinct_ports: 50         # one src probing >= this many distinct dst ports on one dst within the window
+ 
++slow_scan:
++  enabled: true
++  severity: medium
++  window_seconds: 300        # long window catches low-and-slow probing
++  distinct_ports: 20         # one src probing >= this many distinct dst ports on one dst within the window
++
+ syn_burst:
+   enabled: true
+   severity: high
+diff --git a/src/alerts.py b/src/alerts.py
+index fca6345..3018fd9 100644
+--- a/src/alerts.py
++++ b/src/alerts.py
+@@ -20,8 +20,8 @@ class Alert:
+     details: dict[str, Any] = field(default_factory=dict)
+     evidence_indexes: list[int] = field(default_factory=list, repr=False)
+     evidence_path: str | None = None
+-    src_port: int | None = None
+-    dst_port: str | None = None
++    protocol: str = "TCP"     # "TCP" | "UDP" | "ICMP" (set by the rule, never guessed from text)
++    dst_port: str | None = None   # display label, e.g. "80" or "Multiple (200 ports)"
+ 
+     @property
+     def duration(self) -> float:
+diff --git a/src/config.py b/src/config.py
+index 4c30489..1af22f0 100644
+--- a/src/config.py
++++ b/src/config.py
+@@ -31,6 +31,14 @@ class PortScanRule:
+     distinct_ports: int = 50
+ 
+ 
++@dataclass(frozen=True)
++class SlowScanRule:
++    enabled: bool = True
++    severity: str = "medium"
++    window_seconds: float = 300.0
++    distinct_ports: int = 20
++
++
+ @dataclass(frozen=True)
+ class SynBurstRule:
+     enabled: bool = True
+@@ -95,6 +103,7 @@ class DatabaseSettings:
+ @dataclass(frozen=True)
+ class Config:
+     port_scan: PortScanRule = field(default_factory=PortScanRule)
++    slow_scan: SlowScanRule = field(default_factory=SlowScanRule)
+     syn_burst: SynBurstRule = field(default_factory=SynBurstRule)
+     suspicious_flags: SuspiciousFlagsRule = field(default_factory=SuspiciousFlagsRule)
+     cleartext_protocols: CleartextRule = field(default_factory=CleartextRule)
+diff --git a/src/db.py b/src/db.py
+index d2790fa..c06d476 100644
+--- a/src/db.py
++++ b/src/db.py
+@@ -34,6 +34,14 @@ DEFAULT_MYSQL_CONFIG = {
+ ACTIVE_ENGINE: str | None = None
+ 
+ 
++def _mark_sqlite_fallback(exc: Exception) -> None:
++    """Warn once, then stay on SQLite for the rest of this process."""
++    global ACTIVE_ENGINE
++    if ACTIVE_ENGINE != "sqlite":
++        logger.warning("MySQL unavailable (%s); using SQLite for this session", exc)
++    ACTIVE_ENGINE = "sqlite"
++
++
+ def _get_active_engine(db_path: Path | str | None = None) -> tuple[str, dict[str, Any]]:
+     """Determine whether to use MySQL or SQLite based on configuration and arguments."""
+     if db_path is not None:
+@@ -129,7 +137,7 @@ def init_db(db_path: Path | str | None = None) -> str:
+             conn.close()
+             return "mysql"
+         except Exception as exc:
+-            logger.warning("Could not connect to XAMPP MySQL (%s); falling back to SQLite", exc)
++            _mark_sqlite_fallback(exc)
+ 
+     # SQLite fallback / default
+     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+@@ -240,7 +248,7 @@ def insert_alert(
+             conn.close()
+             return int(last_id)
+         except Exception as exc:
+-            logger.warning("MySQL insert failed (%s); falling back to SQLite", exc)
++            _mark_sqlite_fallback(exc)
+ 
+     # SQLite
+     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+@@ -323,7 +331,7 @@ def get_alerts(
+                 alerts.append(d)
+             return alerts
+         except Exception as exc:
+-            logger.warning("MySQL fetch failed (%s); using SQLite", exc)
++            _mark_sqlite_fallback(exc)
+ 
+     # SQLite
+     query = "SELECT * FROM alerts WHERE 1=1"
+@@ -383,7 +391,7 @@ def get_alert_by_id(alert_id: int, db_path: Path | str | None = None) -> dict[st
+                 d["dst_port"] = _extract_port(d.get("details")) or "-"
+             return d
+         except Exception as exc:
+-            logger.warning("MySQL get_alert_by_id failed (%s); using SQLite", exc)
++            _mark_sqlite_fallback(exc)
+ 
+     # SQLite
+     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+@@ -430,7 +438,7 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
+                 "by_rule": by_rule,
+             }
+         except Exception as exc:
+-            logger.warning("MySQL get_summary_stats failed (%s); using SQLite", exc)
++            _mark_sqlite_fallback(exc)
+ 
+     # SQLite
+     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+diff --git a/src/detector.py b/src/detector.py
+index 407c68d..42c7cd7 100644
+--- a/src/detector.py
++++ b/src/detector.py
+@@ -95,6 +95,8 @@ class Detector:
+         if rec.proto == "TCP":
+             if c.port_scan.enabled:
+                 self._port_scan(rec)
++            if c.slow_scan.enabled:
++                self._slow_scan(rec)
+             if c.syn_burst.enabled:
+                 self._syn_burst(rec)
+             if c.suspicious_flags.enabled:
+@@ -176,6 +178,27 @@ class Detector:
+             ports = set(w.counts)
+             inc = self._open_incident(key, "port_scan", r.severity, rec.src, rec.dst, rec, w)
+             inc.ports = ports
++            # A fast scan supersedes any slow-scan tracking for the same pair.
++            self._open.pop(("slow_scan", rec.src, rec.dst), None)
++            self._windows.pop(("slow_scan", rec.src, rec.dst), None)
++
++    def _slow_scan(self, rec: PacketRecord) -> None:
++        if not rec.has_flags(clear=ACK | RST):
++            return
++        if ("port_scan", rec.src, rec.dst) in self._open:
++            return  # already reported as a fast scan
++        key = ("slow_scan", rec.src, rec.dst)
++        if inc := self._open.get(key):
++            self._extend(inc, rec)
++            inc.ports.add(rec.dport)
++            return
++        r = self.cfg.slow_scan
++        w = self._window(key, r.window_seconds)
++        w.add(rec.ts, rec.dport, rec.index)
++        if w.distinct >= r.distinct_ports:
++            ports = set(w.counts)
++            inc = self._open_incident(key, "slow_scan", r.severity, rec.src, rec.dst, rec, w)
++            inc.ports = ports
+ 
+     def _syn_burst(self, rec: PacketRecord) -> None:
+         if not rec.has_flags(set_=SYN, clear=ACK | RST):
+@@ -251,6 +274,9 @@ class Detector:
+         if inc.rule == "port_scan":
+             details = {"distinct_ports": len(ports), "sample_ports": ports[:20]}
+             summary = f"{inc.src} probed {len(ports)} distinct TCP ports on {inc.dst} in {dur:.1f}s"
++        elif inc.rule == "slow_scan":
++            details = {"distinct_ports": len(ports), "sample_ports": ports[:20]}
++            summary = f"{inc.src} slowly probed {len(ports)} distinct TCP ports on {inc.dst} over {dur:.0f}s"
+         elif inc.rule == "syn_burst":
+             rate = inc.count / dur if dur > 0 else float(inc.count)
+             details = {"dport": ports[0], "syn_count": inc.count, "rate_per_sec": round(rate, 1)}
+@@ -287,5 +313,6 @@ class Detector:
+             first_ts=inc.first_ts, last_ts=inc.last_ts, packet_count=inc.count,
+             summary=summary, details=details, evidence_indexes=inc.indexes,
+             dst_port=dst_port_str,
++            protocol="ICMP" if inc.rule == "icmp_flood" else "TCP",
+         )
+ 
+diff --git a/src/evidence.py b/src/evidence.py
+index b6cffca..d757bae 100644
+--- a/src/evidence.py
++++ b/src/evidence.py
+@@ -17,6 +17,15 @@ from src.alerts import Alert
+ 
+ # Keep the number of simultaneously open output files well under OS limits.
+ MAX_OPEN_WRITERS = 200
++PROJECT_ROOT = Path(__file__).resolve().parent.parent
++
++
++def _store_path(path: Path) -> str:
++    """Project-relative POSIX path when possible, so the DB survives moving the project."""
++    try:
++        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
++    except ValueError:
++        return str(path)
+ 
+ 
+ def _safe(text: str) -> str:
+@@ -53,4 +62,4 @@ def write_evidence(pcap_path: str | Path, alerts: list[Alert], out_dir: str | Pa
+                 w.close()
+ 
+         for path, (_, alert) in zip(paths, batch):
+-            alert.evidence_path = str(path)
++            alert.evidence_path = _store_path(path)
+diff --git a/src/export.py b/src/export.py
+new file mode 100644
+index 0000000..6b87fad
+--- /dev/null
++++ b/src/export.py
+@@ -0,0 +1,25 @@
++"""One CSV writer shared by the CLI and the dashboard."""
++
++from __future__ import annotations
++
++import csv
++from typing import Any, Iterable, TextIO
++
++COLUMNS = [
++    ("id", "ID"), ("detected_at", "Detected At"), ("packet_time", "Packet Time"),
++    ("rule", "Rule"), ("severity", "Severity"), ("src_ip", "Source IP"),
++    ("dst_ip", "Destination IP"), ("dst_port", "Target Port"), ("protocol", "Protocol"),
++    ("description", "Description"), ("source_pcap", "Source PCAP"),
++    ("packet_count", "Packet Count"), ("evidence_file", "Evidence File"),
++]
++
++
++def write_alerts_csv(fh: TextIO, rows: Iterable[dict[str, Any]]) -> int:
++    """Write ``rows`` (dicts keyed like the DB columns) to ``fh``; return the row count."""
++    writer = csv.writer(fh)
++    writer.writerow([label for _, label in COLUMNS])
++    n = 0
++    for row in rows:
++        writer.writerow([row.get(key, "") if row.get(key) is not None else "" for key, _ in COLUMNS])
++        n += 1
++    return n
+diff --git a/src/main.py b/src/main.py
+index d002cad..88910ef 100644
+--- a/src/main.py
++++ b/src/main.py
+@@ -3,14 +3,22 @@
+ from __future__ import annotations
+ 
+ import argparse
+-import csv
+ import sys
+ import time
+ from pathlib import Path
+ 
+ from src.analyze import analyze
+ from src.config import load_config
+-from src.db import clear_alerts, get_alerts, init_db, insert_alert
++from src.db import clear_alerts, get_alerts
++from src.export import write_alerts_csv
++from src.store import store_alerts
++
++
++def _export_all(path: Path) -> int:
++    """Write every stored alert to ``path`` as CSV; return the row count."""
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with open(path, "w", newline="", encoding="utf-8") as fh:
++        return write_alerts_csv(fh, get_alerts(limit=100_000))
+ 
+ 
+ def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | None) -> int:
+@@ -23,24 +31,7 @@ def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | N
+     result = analyze(pcap_path, cfg=cfg)
+     elapsed = time.perf_counter() - start_time
+ 
+-    # Store alerts to SQLite
+-    init_db()
+-    for alert in result.alerts:
+-        insert_alert(
+-            rule=alert.rule,
+-            severity=alert.severity,
+-            src_ip=alert.src,
+-            dst_ip=alert.dst,
+-            packet_time=alert.first_ts,
+-            description=alert.summary,
+-            evidence_file=alert.evidence_path,
+-            source_pcap=str(pcap_path.name),
+-            protocol="TCP" if "TCP" in alert.summary else ("ICMP" if "ICMP" in alert.summary else "OTHER"),
+-            packet_count=alert.packet_count,
+-            details=alert.details,
+-            dst_port=alert.dst_port,
+-        )
+-
++    store_alerts(result.alerts, pcap_path.name)
+ 
+     # Print summary table
+     print("\n" + "=" * 65)
+@@ -77,23 +68,8 @@ def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | N
+     print("=" * 65 + "\n")
+ 
+     if export_path:
+-        export_path.parent.mkdir(parents=True, exist_ok=True)
+-        with open(export_path, "w", newline="", encoding="utf-8") as f:
+-            writer = csv.writer(f)
+-            writer.writerow([
+-                "ID", "Detected At", "Packet Time", "Rule", "Severity",
+-                "Source IP", "Destination IP", "Protocol", "Description",
+-                "Evidence File", "Source PCAP"
+-            ])
+-            all_alerts = get_alerts(limit=1000)
+-            for row in all_alerts:
+-                writer.writerow([
+-                    row["id"], row["detected_at"], row["packet_time"],
+-                    row["rule"], row["severity"], row["src_ip"], row["dst_ip"],
+-                    row["protocol"], row["description"], row["evidence_file"],
+-                    row["source_pcap"]
+-                ])
+-        print(f"[+] Exported alerts to: {export_path}")
++        n = _export_all(export_path)
++        print(f"[+] Exported {n} stored alert(s) (all runs) to: {export_path}")
+ 
+     return 0
+ 
+@@ -116,23 +92,8 @@ def main() -> int:
+ 
+     if not args.pcap:
+         if args.export:
+-            # Export without analyzing new pcap
+-            args.export.parent.mkdir(parents=True, exist_ok=True)
+-            with open(args.export, "w", newline="", encoding="utf-8") as f:
+-                writer = csv.writer(f)
+-                writer.writerow([
+-                    "ID", "Detected At", "Packet Time", "Rule", "Severity",
+-                    "Source IP", "Destination IP", "Protocol", "Description",
+-                    "Evidence File", "Source PCAP"
+-                ])
+-                for row in get_alerts(limit=5000):
+-                    writer.writerow([
+-                        row["id"], row["detected_at"], row["packet_time"],
+-                        row["rule"], row["severity"], row["src_ip"], row["dst_ip"],
+-                        row["protocol"], row["description"], row["evidence_file"],
+-                        row["source_pcap"]
+-                    ])
+-            print(f"[+] Exported alerts to: {args.export}")
++            n = _export_all(args.export)
++            print(f"[+] Exported {n} stored alert(s) to: {args.export}")
+             return 0
+         parser.print_help()
+         return 1
+diff --git a/src/parser.py b/src/parser.py
+index c9aacd6..73777dd 100644
+--- a/src/parser.py
++++ b/src/parser.py
+@@ -18,7 +18,7 @@ from typing import Iterator
+ 
+ from scapy.error import Scapy_Exception
+ from scapy.layers.inet import ICMP, IP, TCP, UDP
+-from scapy.layers.inet6 import IPv6
++from scapy.layers.inet6 import ICMPv6EchoRequest, IPv6
+ from scapy.utils import PcapReader
+ 
+ # TCP flag bits
+@@ -89,6 +89,9 @@ def _to_record(index: int, pkt) -> PacketRecord | None:
+         return PacketRecord(proto="UDP", sport=u.sport, dport=u.dport, **common)
+     if ICMP in pkt:
+         return PacketRecord(proto="ICMP", icmp_type=int(pkt[ICMP].type), **common)
++    if ICMPv6EchoRequest in pkt:
++        # Normalised to ICMP type 8 so the same flood rule covers IPv4 and IPv6.
++        return PacketRecord(proto="ICMP", icmp_type=8, **common)
+     return PacketRecord(proto="OTHER", **common)
+ 
+ 
+diff --git a/src/store.py b/src/store.py
+new file mode 100644
+index 0000000..3f28ca7
+--- /dev/null
++++ b/src/store.py
+@@ -0,0 +1,26 @@
++"""Single place that saves analysis results to the database."""
++
++from __future__ import annotations
++
++from src.alerts import Alert
++from src.db import init_db, insert_alert
++
++
++def store_alerts(alerts: list[Alert], source_pcap: str) -> None:
++    """Persist every alert from one analysis run."""
++    init_db()
++    for a in alerts:
++        insert_alert(
++            rule=a.rule,
++            severity=a.severity,
++            src_ip=a.src,
++            dst_ip=a.dst,
++            packet_time=a.first_ts,
++            description=a.summary,
++            evidence_file=a.evidence_path,
++            source_pcap=source_pcap,
++            protocol=a.protocol,
++            packet_count=a.packet_count,
++            details=a.details,
++            dst_port=a.dst_port,
++        )
+diff --git a/tests/test_cli_and_upload.py b/tests/test_cli_and_upload.py
+new file mode 100644
+index 0000000..4f89e37
+--- /dev/null
++++ b/tests/test_cli_and_upload.py
+@@ -0,0 +1,60 @@
++"""CLI and dashboard-upload tests (previously untested paths)."""
++
++from __future__ import annotations
++
++import io
++
++import pytest
++
++from dashboard.app import app
++from src import db
++from src.main import main
++from tests.make_synthetic_pcaps import generate
++
++
++@pytest.fixture
++def sqlite_only(tmp_path, monkeypatch):
++    monkeypatch.setattr(db, "ACTIVE_ENGINE", "sqlite")
++    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
++    monkeypatch.setattr(db, "DEFAULT_SQLITE_PATH", tmp_path / "t.db")
++    monkeypatch.setattr("dashboard.app.UPLOAD_DIR", tmp_path)
++    monkeypatch.setattr("dashboard.app.PROJECT_ROOT", tmp_path)
++    return tmp_path
++
++
++def test_cli_without_arguments_prints_help(monkeypatch, capsys):
++    import sys
++    monkeypatch.setattr(sys, "argv", ["bantaynet"])
++    assert main() == 1
++    assert "usage" in capsys.readouterr().out.lower()
++
++
++def test_cli_analyze_and_export(sqlite_only, monkeypatch, capsys):
++    generate(sqlite_only)
++    out_csv = sqlite_only / "out.csv"
++    import sys
++    monkeypatch.setattr(sys, "argv", ["bantaynet", "--pcap", str(sqlite_only / "portscan.pcap"), "--export", str(out_csv)])
++    assert main() == 0
++    text = out_csv.read_text()
++    assert "port_scan" in text and ",TCP," in text
++    assert "BANTAYNET ANALYSIS SUMMARY" in capsys.readouterr().out
++
++
++def test_cli_clear_db(sqlite_only, monkeypatch, capsys):
++    import sys
++    monkeypatch.setattr(sys, "argv", ["bantaynet", "--clear-db"])
++    assert main() == 0
++    assert "cleared" in capsys.readouterr().out.lower()
++
++
++def test_valid_upload_runs_analysis_and_never_overwrites(sqlite_only):
++    generate(sqlite_only)
++    data = (sqlite_only / "portscan.pcap").read_bytes()
++    app.config["TESTING"] = True
++    with app.test_client() as c:
++        for _ in range(2):
++            res = c.post("/upload", data={"pcap_file": (io.BytesIO(data), "scan.pcap")},
++                         content_type="multipart/form-data", follow_redirects=True)
++            assert b"Successfully analyzed" in res.data
++    saved = [p.name for p in sqlite_only.glob("*_scan.pcap")]
++    assert len(saved) == 2  # two uploads, two distinct files
+diff --git a/tests/test_fixes.py b/tests/test_fixes.py
+new file mode 100644
+index 0000000..5e4619b
+--- /dev/null
++++ b/tests/test_fixes.py
+@@ -0,0 +1,103 @@
++"""Regression tests for the fixes in the BantayNet problems-and-fixes list."""
++
++from __future__ import annotations
++
++import io
++from collections import Counter
++
++import pytest
++from scapy.layers.inet import ICMP, IP, TCP
++from scapy.layers.inet6 import ICMPv6EchoRequest, IPv6
++from scapy.layers.l2 import Ether
++from scapy.utils import wrpcap
++
++from src.analyze import analyze
++from src.config import load_config
++from src.export import write_alerts_csv
++from tests.make_synthetic_pcaps import generate
++
++T0 = 1_760_000_000.0
++
++
++def _syn(src, dst, dport, t):
++    p = Ether() / IP(src=src, dst=dst) / TCP(sport=40000, dport=dport, flags="S")
++    p.time = t
++    return p
++
++
++def _write(path, pkts):
++    wrpcap(str(path), pkts)
++    return path
++
++
++@pytest.fixture(scope="module")
++def pcaps(tmp_path_factory):
++    out = tmp_path_factory.mktemp("fixpcaps")
++    generate(out)
++    return out
++
++
++@pytest.fixture
++def cfg():
++    return load_config()
++
++
++# --- Fix 1: protocol comes from the rule, not from summary text --------------
++def test_protocol_set_by_rule(pcaps, cfg, tmp_path):
++    by_rule = {}
++    for name in ("burst", "suspicious"):
++        for a in analyze(pcaps / f"{name}.pcap", cfg, evidence_dir=tmp_path).alerts:
++            by_rule[a.rule] = a.protocol
++    assert by_rule["syn_burst"] == "TCP"
++    assert by_rule["cleartext"] == "TCP"
++    assert by_rule["icmp_flood"] == "ICMP"
++
++
++# --- Fix 2: evidence path is project-relative --------------------------------
++def test_evidence_path_is_relative(pcaps, cfg):
++    res = analyze(pcaps / "portscan.pcap", cfg)  # default evidence dir inside the project
++    path = res.alerts[0].evidence_path
++    assert not path.startswith("/") and ":" not in path[:3]
++    assert path.startswith("evidence/")
++
++
++# --- Fix 5 + 6: slow and moderate scans --------------------------------------
++def test_slow_scan_detected(tmp_path, cfg):
++    pcap = _write(tmp_path / "slow.pcap", [_syn("10.0.0.66", "10.0.0.10", 1000 + i, T0 + i * 2) for i in range(100)])
++    res = analyze(pcap, cfg, evidence_dir=tmp_path)
++    assert Counter(a.rule for a in res.alerts) == {"slow_scan": 1}
++
++
++def test_moderate_fast_scan_detected(tmp_path, cfg):
++    pcap = _write(tmp_path / "mid.pcap", [_syn("10.0.0.66", "10.0.0.10", 1000 + i, T0 + i * 0.1) for i in range(30)])
++    res = analyze(pcap, cfg, evidence_dir=tmp_path)
++    assert Counter(a.rule for a in res.alerts) == {"slow_scan": 1}
++
++
++def test_fast_scan_is_not_double_reported(pcaps, cfg, tmp_path):
++    res = analyze(pcaps / "portscan.pcap", cfg, evidence_dir=tmp_path)
++    assert Counter(a.rule for a in res.alerts) == {"port_scan": 1}
++
++
++def test_few_ports_no_alert(tmp_path, cfg):
++    pcap = _write(tmp_path / "few.pcap", [_syn("10.0.0.5", "10.0.0.10", 80 + i, T0 + i) for i in range(5)])
++    assert analyze(pcap, cfg, evidence_dir=tmp_path).alerts == []
++
++
++# --- Fix 8: ICMPv6 echo flood ------------------------------------------------
++def test_icmpv6_flood_detected(tmp_path, cfg):
++    pkts = []
++    for i in range(150):
++        p = Ether() / IPv6(src="fd00::66", dst="fd00::10") / ICMPv6EchoRequest(seq=i)
++        p.time = T0 + i * 0.005
++        pkts.append(p)
++    res = analyze(_write(tmp_path / "v6.pcap", pkts), cfg, evidence_dir=tmp_path)
++    assert Counter(a.rule for a in res.alerts) == {"icmp_flood": 1}
++
++
++# --- Fix 9: one CSV writer ---------------------------------------------------
++def test_write_alerts_csv_handles_missing_values():
++    buf = io.StringIO()
++    n = write_alerts_csv(buf, [{"id": 1, "rule": "port_scan", "dst_port": None}])
++    text = buf.getvalue()
++    assert n == 1 and text.startswith("ID,Detected At") and "port_scan" in text

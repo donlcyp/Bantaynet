@@ -32,6 +32,14 @@ class PortScanRule:
 
 
 @dataclass(frozen=True)
+class SlowScanRule:
+    enabled: bool = True
+    severity: str = "medium"
+    window_seconds: float = 300.0
+    distinct_ports: int = 20
+
+
+@dataclass(frozen=True)
 class SynBurstRule:
     enabled: bool = True
     severity: str = "high"
@@ -95,6 +103,7 @@ class DatabaseSettings:
 @dataclass(frozen=True)
 class Config:
     port_scan: PortScanRule = field(default_factory=PortScanRule)
+    slow_scan: SlowScanRule = field(default_factory=SlowScanRule)
     syn_burst: SynBurstRule = field(default_factory=SynBurstRule)
     suspicious_flags: SuspiciousFlagsRule = field(default_factory=SuspiciousFlagsRule)
     cleartext_protocols: CleartextRule = field(default_factory=CleartextRule)
