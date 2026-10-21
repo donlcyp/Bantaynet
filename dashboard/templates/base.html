@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}BantayNet - Suspicious Activity Detection{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <!-- Authorized Lab Notice Banner -->
+  <div class="notice-banner">
+    <div>
+      <span class="notice-badge">AUTHORIZED LAB USE ONLY</span>
+      <span>System is strictly detect-and-alert only. Analyzes authorized lab traffic and offline PCAP files.</span>
+    </div>
+    <div style="font-size: 0.75rem; color: #c084fc;">Scapy & SQLite Engine</div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="navbar">
+      <a href="{{ url_for('index') }}" class="brand">
+        <div class="brand-icon">BN</div>
+        <div class="brand-name">Bantay<span>Net</span></div>
+      </a>
+      <div class="nav-links">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">Dashboard</a>
+        <button type="button" class="btn btn-primary" onclick="openUploadModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          Upload PCAP
+        </button>
+        <a href="{{ url_for('export_csv', rule=request.args.get('rule', ''), severity=request.args.get('severity', ''), src_ip=request.args.get('src_ip', ''), search=request.args.get('search', '')) }}" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Export CSV
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Flash Messages -->
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-container">
+          {% for category, message in messages %}
+            <div class="alert-flash alert-flash-{{ 'success' if category == 'success' else 'error' }}">
+              <span>{{ message }}</span>
+              <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;cursor:pointer;">&times;</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Upload Modal -->
+  <div id="uploadModal" class="modal">
+    <div class="modal-content">
+      <div class="panel-title">
+        <span>Upload Capture for Offline Analysis</span>
+        <button onclick="closeUploadModal()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.25rem;">&times;</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Select an authorized lab <code>.pcap</code> or <code>.pcapng</code> file (up to 50 MB) to stream and analyze.
+      </p>
+
+      <form action="{{ url_for('upload_pcap') }}" method="POST" enctype="multipart/form-data" id="uploadForm">
+        <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: #38bdf8; margin-bottom: 0.5rem;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <div id="fileLabel" style="font-size: 0.9rem; font-weight: 500;">Click to browse or drop PCAP here</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">Supports .pcap, .pcapng</div>
+          <input type="file" id="fileInput" name="pcap_file" accept=".pcap,.pcapng" style="display:none;" onchange="updateFileName(this)">
+        </div>
+        <div style="display:flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="analyzeSubmitBtn" disabled>Analyze Traffic</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function openUploadModal() {
+      document.getElementById('uploadModal').classList.add('active');
+    }
+    function closeUploadModal() {
+      document.getElementById('uploadModal').classList.remove('active');
+    }
+    function updateFileName(input) {
+      if (input.files && input.files[0]) {
+        document.getElementById('fileLabel').textContent = input.files[0].name;
+        document.getElementById('analyzeSubmitBtn').disabled = false;
+      }
+    }
+    // Close modal on click outside
+    window.onclick = function(event) {
+      const modal = document.getElementById('uploadModal');
+      if (event.target === modal) {
+        closeUploadModal();
+      }
+    }
+  </script>
+</body>
+</html>

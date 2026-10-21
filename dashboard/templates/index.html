@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}BantayNet - Security Alerts Dashboard{% endblock %}
+
+{% block content %}
+<!-- Metric Cards -->
+<div class="stats-grid">
+  <div class="stat-card total">
+    <div class="stat-label">Total Detections</div>
+    <div class="stat-value" style="color: #38bdf8;">{{ stats.total }}</div>
+  </div>
+  <div class="stat-card high">
+    <div class="stat-label">High Severity</div>
+    <div class="stat-value" style="color: #f87171;">{{ stats.high }}</div>
+  </div>
+  <div class="stat-card medium">
+    <div class="stat-label">Medium Severity</div>
+    <div class="stat-value" style="color: #fbbf24;">{{ stats.medium }}</div>
+  </div>
+  <div class="stat-card low">
+    <div class="stat-label">Low Severity</div>
+    <div class="stat-value" style="color: #60a5fa;">{{ stats.low }}</div>
+  </div>
+</div>
+
+<!-- Filters Panel -->
+<div class="panel">
+  <div class="panel-title">
+    <span>Filter & Search Alerts</span>
+    <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
+      Showing {{ alerts|length }} incident(s)
+    </span>
+  </div>
+
+  <form method="GET" action="{{ url_for('index') }}" class="filter-form">
+    <div class="form-group">
+      <label for="rule">Rule Type</label>
+      <select name="rule" id="rule" class="form-control">
+        <option value="">All Rules</option>
+        <option value="port_scan" {% if filters.rule == 'port_scan' %}selected{% endif %}>Port Scan</option>
+        <option value="syn_burst" {% if filters.rule == 'syn_burst' %}selected{% endif %}>SYN Burst</option>
+        <option value="suspicious_flags" {% if filters.rule == 'suspicious_flags' %}selected{% endif %}>Suspicious Flags</option>
+        <option value="cleartext" {% if filters.rule == 'cleartext' %}selected{% endif %}>Cleartext Protocols</option>
+        <option value="icmp_flood" {% if filters.rule == 'icmp_flood' %}selected{% endif %}>ICMP Flood</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="severity">Severity</label>
+      <select name="severity" id="severity" class="form-control">
+        <option value="">All Severities</option>
+        <option value="high" {% if filters.severity == 'high' %}selected{% endif %}>High</option>
+        <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
+        <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="src_ip">Source IP</label>
+      <input type="text" name="src_ip" id="src_ip" class="form-control" placeholder="e.g. 10.0.0.66" value="{{ filters.src_ip }}">
+    </div>
+
+    <div class="form-group">
+      <label for="search">Keywords / Subnets</label>
+      <input type="text" name="search" id="search" class="form-control" placeholder="Search description, pcap, IP..." value="{{ filters.search }}">
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="height: 38px;">Apply Filters</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary" style="height: 38px;">Reset</a>
+  </form>
+</div>
+
+<!-- Alerts Table -->
+<div class="panel" style="padding: 0; overflow: hidden;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <h2 style="font-size: 1rem; font-weight: 600;">Incident History</h2>
+    <div style="font-size: 0.8rem; color: var(--text-dim);">Live SQLite Database</div>
+  </div>
+
+  {% if alerts %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Severity</th>
+          <th>Rule</th>
+          <th>Source IP</th>
+          <th>Destination IP</th>
+          <th>Target Port</th>
+          <th>Proto</th>
+          <th>Description</th>
+          <th>Source PCAP</th>
+          <th>Packets</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in alerts %}
+        <tr>
+          <td style="color: var(--text-dim); font-weight: 600;">#{{ a.id }}</td>
+          <td>
+            <span class="badge badge-{{ a.severity }}">{{ a.severity }}</span>
+          </td>
+          <td>
+            <span class="code-badge">{{ a.rule }}</span>
+          </td>
+          <td class="ip-text">{{ a.src_ip }}</td>
+          <td class="ip-text">{{ a.dst_ip or '-' }}</td>
+          <td>
+            {% if a.dst_port and a.dst_port != '-' %}
+              <span class="code-badge" style="color: #fbbf24;">{{ a.dst_port }}</span>
+            {% else %}
+              <span style="color: var(--text-dim);">-</span>
+            {% endif %}
+          </td>
+          <td><span style="font-size: 0.8rem; color: var(--text-muted);">{{ a.protocol }}</span></td>
+          <td style="max-width: 320px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="{{ a.description }}">
+            {{ a.description }}
+          </td>
+
+          <td style="font-size: 0.8rem; color: var(--text-muted);">{{ a.source_pcap or '-' }}</td>
+          <td>
+            <span style="background: rgba(255,255,255,0.06); padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem;">
+              {{ a.packet_count }}
+            </span>
+          </td>
+          <td>
+            <div style="display: flex; gap: 0.4rem;">
+              <a href="{{ url_for('alert_detail', alert_id=a.id) }}" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">
+                Inspect
+              </a>
+              {% if a.evidence_file %}
+              <a href="{{ url_for('download_evidence', alert_id=a.id) }}" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" title="Download evidence .pcap">
+                PCAP
+              </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No Suspicious Alerts Found</h3>
+    <p>Upload a capture file or adjust filter criteria above to inspect activity.</p>
+    <button type="button" class="btn btn-primary" style="margin-top: 1rem;" onclick="openUploadModal()">Upload PCAP File</button>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

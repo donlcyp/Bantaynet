@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Alert #{{ alert.id }} - {{ alert.rule }} - BantayNet{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+  <a href="{{ url_for('index') }}" class="btn btn-secondary" style="font-size: 0.8rem; margin-bottom: 1rem;">
+    &larr; Back to Dashboard
+  </a>
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <span class="badge badge-{{ alert.severity }}" style="font-size: 0.85rem; padding: 0.3rem 0.75rem;">
+        {{ alert.severity }} Severity
+      </span>
+      <h1 style="font-size: 1.6rem; margin-top: 0.5rem; font-weight: 700;">
+        Alert #{{ alert.id }}: <span style="color: #38bdf8;">{{ alert.rule }}</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
+        {{ alert.description }}
+      </p>
+    </div>
+    {% if alert.evidence_file %}
+    <div>
+      <a href="{{ url_for('download_evidence', alert_id=alert.id) }}" class="btn btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download Evidence PCAP
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="detail-grid">
+  <!-- Incident Metadata -->
+  <div class="panel">
+    <div class="panel-title">Incident Information</div>
+    <dl class="info-list">
+      <dt>Detection Time</dt>
+      <dd>{{ alert.detected_at }}</dd>
+
+      <dt>Packet Timestamp</dt>
+      <dd>{{ alert.packet_time }}</dd>
+
+      <dt>Source Host</dt>
+      <dd><span class="ip-text" style="color: #f87171;">{{ alert.src_ip }}</span></dd>
+
+      <dt>Destination Host</dt>
+      <dd><span class="ip-text" style="color: #38bdf8;">{{ alert.dst_ip or 'N/A' }}</span></dd>
+
+      <dt>Target / Destination Port</dt>
+      <dd>
+        {% if alert.dst_port and alert.dst_port != '-' %}
+          <span class="code-badge" style="color: #fbbf24; font-size: 0.9rem;">{{ alert.dst_port }}</span>
+        {% else %}
+          <span style="color: var(--text-dim);">N/A (ICMP / non-port traffic)</span>
+        {% endif %}
+      </dd>
+
+      <dt>Protocol</dt>
+      <dd>{{ alert.protocol }}</dd>
+
+
+      <dt>Source PCAP</dt>
+      <dd><code>{{ alert.source_pcap or 'N/A' }}</code></dd>
+    </dl>
+  </div>
+
+  <!-- Technical Telemetry -->
+  <div class="panel">
+    <div class="panel-title">Detection Rule Details</div>
+    <dl class="info-list">
+      <dt>Total Triggered Packets</dt>
+      <dd>{{ alert.packet_count }} packets</dd>
+
+      {% if alert.details %}
+        {% for k, v in alert.details.items() %}
+          <dt>{{ k|replace('_', ' ')|title }}</dt>
+          <dd>
+            {% if v is sequence and v is not string %}
+              <div style="max-height: 120px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;">
+                {{ v|join(', ') }}
+              </div>
+            {% else %}
+              <code>{{ v }}</code>
+            {% endif %}
+          </dd>
+        {% endfor %}
+      {% endif %}
+
+      <dt>Evidence PCAP Storage Path</dt>
+      <dd style="font-size: 0.85rem; word-break: break-all; color: var(--text-dim);">
+        {{ alert.evidence_file or 'No evidence snippet saved' }}
+      </dd>
+    </dl>
+  </div>
+</div>
+
+<!-- Evidence Packets Inspector -->
+<div class="panel" style="padding: 0; overflow: hidden;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <h2 style="font-size: 1.05rem; font-weight: 600;">Evidence Packets (Forensic Inspection)</h2>
+      <div style="font-size: 0.8rem; color: var(--text-dim);">
+        {% if evidence_packets %}
+          Showing {{ evidence_packets|length }} preserved packet(s) from evidence snippet
+        {% else %}
+          No evidence packets available
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if evidence_packets %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Rel Time</th>
+          <th>Source</th>
+          <th>Destination</th>
+          <th>Protocol</th>
+          <th>Flags / Type</th>
+          <th>Length</th>
+          <th>Summary / Payload Info</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in evidence_packets %}
+        <tr class="evidence-packet-row">
+          <td>{{ p.num }}</td>
+          <td>+{{ p.rel_time }}s</td>
+          <td>{{ p.src }}</td>
+          <td>{{ p.dst }}</td>
+          <td><span class="code-badge">{{ p.proto }}</span></td>
+          <td>
+            {% if p.flags %}
+              <span style="color: #f59e0b; font-weight: bold;">{{ p.flags }}</span>
+            {% else %}
+              <span style="color: var(--text-dim);">-</span>
+            {% endif %}
+          </td>
+          <td>{{ p.len }} B</td>
+          <td style="color: var(--text-muted); max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ p.summary }}">
+            {{ p.summary }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding: 2rem; text-align: center; color: var(--text-dim);">
+    No evidence packets to display for this alert.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

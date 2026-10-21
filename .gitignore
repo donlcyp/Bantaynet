@@ -1,0 +1,32 @@
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Database files
+*.db
+*.sqlite3
+
+# Evidence PCAPs
+evidence/
+*.pcap
+*.pcapng
+!pcaps/
+pcaps/*.pcap
+pcaps/*.pcapng
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Generated reports
+reports/*.csv
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

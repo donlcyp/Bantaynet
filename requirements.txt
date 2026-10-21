@@ -1,0 +1,7 @@
+scapy
+pyyaml
+flask
+pandas
+pytest
+pymysql
+cryptography

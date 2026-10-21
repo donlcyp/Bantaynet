@@ -1,0 +1,64 @@
+# BantayNet detection rules
+#
+# All windows are in seconds of *capture time* (packet timestamps), not wall-clock
+# time, so results are the same no matter how fast a PCAP is read.
+# Thresholds are deliberately conservative starting points; tune them for your lab.
+
+port_scan:
+  enabled: true
+  severity: high
+  window_seconds: 5          # sliding window length
+  distinct_ports: 50         # one src probing >= this many distinct dst ports on one dst within the window
+
+syn_burst:
+  enabled: true
+  severity: high
+  window_seconds: 2
+  syn_count: 200             # >= this many SYN-only packets from one src to one dst:port within the window
+
+suspicious_flags:
+  enabled: true
+  severity: medium
+  null_scan: true            # TCP packet with no flags set
+  xmas_scan: true            # FIN + PSH + URG
+  fin_only: true             # FIN with no ACK (not a normal connection close)
+
+cleartext_protocols:
+  enabled: true
+  severity: low
+  # Port 80 (HTTP) is intentionally left out: it is too common in normal traffic
+  # and would bury the more meaningful alerts. Add it if your lab requires it.
+  ports:
+    21: FTP
+    23: Telnet
+    110: POP3
+    143: IMAP
+
+icmp_flood:
+  enabled: true
+  severity: medium
+  window_seconds: 2
+  echo_requests: 100         # >= this many ICMP echo requests from one src to one dst within the window
+
+alerts:
+  # Once a rule fires for a given (rule, src, dst) key, later matching packets are
+  # folded into the same alert. The alert closes after this many seconds with no
+  # matching packets, so one attack produces one alert, not hundreds.
+  cooldown_seconds: 30
+
+evidence:
+  enabled: true
+  output_dir: evidence
+  max_packets: 500           # cap on packets written to one evidence snippet
+
+database:
+  engine: mysql              # "mysql" (for XAMPP MariaDB) or "sqlite"
+  mysql:
+    host: 127.0.0.1
+    port: 3306
+    user: root
+    password: ""
+    database: bantaynet_db
+  sqlite:
+    path: bantaynet.db
+
