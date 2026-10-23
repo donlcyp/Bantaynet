@@ -23,6 +23,53 @@
   </div>
 </div>
 
+<!-- Interactive Visual Analytics -->
+<div class="charts-grid">
+  <!-- Chart 1: Alerts Over Time -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Incident Activity Timeline</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Hourly Activity</span>
+    </div>
+    <div class="chart-container">
+      <canvas id="timelineChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Chart 2: Top Attacking Source IPs -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Top Suspicious Source Hosts</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Top 5 Source IPs</span>
+    </div>
+    <div class="chart-container">
+      <canvas id="topSourcesChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Chart 3: Detections by Rule & MITRE ATT&CK -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Detections by Attack Vector</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Rules & ATT&CK</span>
+    </div>
+    <div class="chart-container">
+      <canvas id="byRuleChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Chart 4: Severity & Threat Distribution -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Severity & Threat Distribution</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Threat Levels</span>
+    </div>
+    <div class="chart-container">
+      <canvas id="severityChart"></canvas>
+    </div>
+  </div>
+</div>
+
 <!-- Filters Panel -->
 <div class="panel">
   <div class="panel-title">
@@ -38,6 +85,8 @@
       <select name="rule" id="rule" class="form-control">
         <option value="">All Rules</option>
         <option value="port_scan" {% if filters.rule == 'port_scan' %}selected{% endif %}>Port Scan</option>
+        <option value="slow_scan" {% if filters.rule == 'slow_scan' %}selected{% endif %}>Slow Scan</option>
+        <option value="host_sweep" {% if filters.rule == 'host_sweep' %}selected{% endif %}>Host Sweep</option>
         <option value="syn_burst" {% if filters.rule == 'syn_burst' %}selected{% endif %}>SYN Burst</option>
         <option value="suspicious_flags" {% if filters.rule == 'suspicious_flags' %}selected{% endif %}>Suspicious Flags</option>
         <option value="cleartext" {% if filters.rule == 'cleartext' %}selected{% endif %}>Cleartext Protocols</option>
@@ -53,6 +102,22 @@
         <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
         <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
       </select>
+    </div>
+
+    <div class="form-group">
+      <label for="status">Status</label>
+      <select name="status" id="status" class="form-control">
+        <option value="">All Statuses</option>
+        <option value="new" {% if filters.status == 'new' %}selected{% endif %}>New</option>
+        <option value="investigating" {% if filters.status == 'investigating' %}selected{% endif %}>Investigating</option>
+        <option value="resolved" {% if filters.status == 'resolved' %}selected{% endif %}>Resolved</option>
+        <option value="false_positive" {% if filters.status == 'false_positive' %}selected{% endif %}>False Positive</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="client_name">Client / Site</label>
+      <input type="text" name="client_name" id="client_name" class="form-control" placeholder="e.g. Branch 2, HQ" value="{{ filters.client_name }}">
     </div>
 
     <div class="form-group">
@@ -74,7 +139,10 @@
 <div class="panel" style="padding: 0; overflow: hidden;">
   <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
     <h2 style="font-size: 1rem; font-weight: 600;">Incident History</h2>
-    <div style="font-size: 0.8rem; color: var(--text-dim);">Live SQLite Database</div>
+    <div style="font-size: 0.8rem; color: var(--text-dim); display: flex; align-items: center; gap: 0.4rem;">
+      <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span>
+      <span>{{ db_engine_name }}</span>
+    </div>
   </div>
 
   {% if alerts %}
@@ -83,8 +151,10 @@
       <thead>
         <tr>
           <th>ID</th>
+          <th>Status</th>
+          <th>Client / Site</th>
           <th>Severity</th>
-          <th>Rule</th>
+          <th>Rule & ATT&CK</th>
           <th>Source IP</th>
           <th>Destination IP</th>
           <th>Target Port</th>
@@ -100,10 +170,29 @@
         <tr>
           <td style="color: var(--text-dim); font-weight: 600;">#{{ a.id }}</td>
           <td>
+            <span class="badge badge-status-{{ a.status }}">{{ a.status|replace('_', ' ')|title }}</span>
+          </td>
+          <td style="font-size: 0.82rem; color: #a5f3fc; font-weight: 500;">
+            {{ a.client_name or 'Default' }}
+          </td>
+          <td>
             <span class="badge badge-{{ a.severity }}">{{ a.severity }}</span>
           </td>
           <td>
-            <span class="code-badge">{{ a.rule }}</span>
+            <div style="display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap;">
+              <span class="code-badge">{{ a.rule }}</span>
+              {% if a.mitre_id and a.mitre_id != 'N/A' %}
+                {% if a.mitre_url %}
+                  <a href="{{ a.mitre_url }}" target="_blank" rel="noopener noreferrer" class="mitre-tag" title="{{ a.mitre_name }} ({{ a.mitre_tactic }})">
+                    {{ a.mitre_id }} &nearr;
+                  </a>
+                {% else %}
+                  <span class="mitre-tag mitre-policy" title="{{ a.mitre_name }}">
+                    {{ a.mitre_id }}
+                  </span>
+                {% endif %}
+              {% endif %}
+            </div>
           </td>
           <td class="ip-text">{{ a.src_ip }}</td>
           <td class="ip-text">{{ a.dst_ip or '-' }}</td>
@@ -150,4 +239,217 @@
   </div>
   {% endif %}
 </div>
+
+<!-- Offline Chart.js Visual Analytics Engine -->
+<script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+<script>
+  (function() {
+    const rawData = {{ chart_data|tojson }};
+    if (!rawData) return;
+
+    const colors = {
+      cyan: '#06b6d4',
+      cyanLight: '#38bdf8',
+      red: '#ef4444',
+      amber: '#f59e0b',
+      blue: '#3b82f6',
+      emerald: '#10b981',
+      purple: '#a855f7',
+      pink: '#ec4899',
+      textMuted: '#9ca3af',
+      grid: 'rgba(255, 255, 255, 0.07)'
+    };
+
+    if (window.Chart) {
+      Chart.defaults.color = colors.textMuted;
+      Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      Chart.defaults.font.size = 11;
+
+      // 1. Timeline Chart
+      const ctxTimeline = document.getElementById('timelineChart');
+      if (ctxTimeline) {
+        const labels = (rawData.timeline && rawData.timeline.labels && rawData.timeline.labels.length > 0)
+          ? rawData.timeline.labels
+          : ['No Timeline Data'];
+        const counts = (rawData.timeline && rawData.timeline.counts && rawData.timeline.counts.length > 0)
+          ? rawData.timeline.counts
+          : [0];
+
+        new Chart(ctxTimeline, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Alerts',
+              data: counts,
+              borderColor: colors.cyanLight,
+              backgroundColor: 'rgba(56, 189, 248, 0.12)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: true,
+              pointBackgroundColor: colors.cyan,
+              pointBorderColor: '#0a0e17',
+              pointBorderWidth: 1.5,
+              pointRadius: 3.5,
+              pointHoverRadius: 6,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: colors.grid,
+                borderWidth: 1,
+              }
+            },
+            scales: {
+              x: { grid: { color: colors.grid } },
+              y: {
+                beginAtZero: true,
+                ticks: { precision: 0 },
+                grid: { color: colors.grid }
+              }
+            }
+          }
+        });
+      }
+
+      // 2. Top Sources Chart
+      const ctxTop = document.getElementById('topSourcesChart');
+      if (ctxTop) {
+        const labels = (rawData.top_sources && rawData.top_sources.labels && rawData.top_sources.labels.length > 0)
+          ? rawData.top_sources.labels
+          : ['No Active Hosts'];
+        const counts = (rawData.top_sources && rawData.top_sources.counts && rawData.top_sources.counts.length > 0)
+          ? rawData.top_sources.counts
+          : [0];
+
+        new Chart(ctxTop, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Alerts',
+              data: counts,
+              backgroundColor: 'rgba(6, 182, 212, 0.65)',
+              borderColor: colors.cyan,
+              borderWidth: 1,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: colors.grid,
+                borderWidth: 1,
+              }
+            },
+            scales: {
+              x: {
+                beginAtZero: true,
+                ticks: { precision: 0 },
+                grid: { color: colors.grid }
+              },
+              y: { grid: { display: false } }
+            }
+          }
+        });
+      }
+
+      // 3. By Rule & ATT&CK Chart
+      const ctxRule = document.getElementById('byRuleChart');
+      if (ctxRule) {
+        const labels = (rawData.by_rule && rawData.by_rule.labels && rawData.by_rule.labels.length > 0)
+          ? rawData.by_rule.labels.map(function(r) { return r.replace('_', ' ').toUpperCase(); })
+          : ['No Detections'];
+        const counts = (rawData.by_rule && rawData.by_rule.counts && rawData.by_rule.counts.length > 0)
+          ? rawData.by_rule.counts
+          : [0];
+        const palette = [
+          '#ef4444', '#f59e0b', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981'
+        ];
+
+        new Chart(ctxRule, {
+          type: 'doughnut',
+          data: {
+            labels: labels,
+            datasets: [{
+              data: counts,
+              backgroundColor: palette.slice(0, labels.length),
+              borderColor: '#111827',
+              borderWidth: 2,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'right',
+                labels: { boxWidth: 10, padding: 8, color: colors.textMuted }
+              },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: colors.grid,
+                borderWidth: 1,
+              }
+            },
+            cutout: '62%'
+          }
+        });
+      }
+
+      // 4. Severity Distribution Chart
+      const ctxSev = document.getElementById('severityChart');
+      if (ctxSev) {
+        new Chart(ctxSev, {
+          type: 'bar',
+          data: {
+            labels: ['High', 'Medium', 'Low'],
+            datasets: [{
+              label: 'Threat Count',
+              data: rawData.by_severity ? rawData.by_severity.counts : [0, 0, 0],
+              backgroundColor: [
+                'rgba(239, 68, 68, 0.75)',
+                'rgba(245, 158, 11, 0.75)',
+                'rgba(59, 130, 246, 0.75)'
+              ],
+              borderColor: [colors.red, colors.amber, colors.blue],
+              borderWidth: 1,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: colors.grid,
+                borderWidth: 1,
+              }
+            },
+            scales: {
+              x: { grid: { display: false } },
+              y: {
+                beginAtZero: true,
+                ticks: { precision: 0 },
+                grid: { color: colors.grid }
+              }
+            }
+          }
+        });
+      }
+    }
+  })();
+</script>
 {% endblock %}

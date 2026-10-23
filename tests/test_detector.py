@@ -184,3 +184,22 @@ def test_closed_cleartext_port_not_flagged():
                      sport=23, dport=40000, tcp_flags=RST | ACK),
     ]
     assert run(Config(), recs) == []
+
+
+def test_host_sweep_detected():
+    base = Config()
+    cfg = replace(base, host_sweep=replace(base.host_sweep, distinct_hosts=10, window_seconds=5.0))
+    recs = [
+        PacketRecord(index=i, ts=i * 0.1, src="10.0.0.66", dst=f"10.0.1.{i+1}", proto="TCP", length=60,
+                     sport=50000, dport=445, tcp_flags=SYN)
+        for i in range(12)
+    ]
+    alerts = run(cfg, recs)
+    assert len(alerts) == 1
+    a = alerts[0]
+    assert a.rule == "host_sweep"
+    assert a.src == "10.0.0.66"
+    assert a.details["distinct_hosts"] == 12
+    assert a.details["dport"] == 445
+    assert a.dst_port == "445"
+

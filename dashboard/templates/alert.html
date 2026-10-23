@@ -9,10 +9,18 @@
   </a>
   <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
     <div>
-      <span class="badge badge-{{ alert.severity }}" style="font-size: 0.85rem; padding: 0.3rem 0.75rem;">
-        {{ alert.severity }} Severity
-      </span>
-      <h1 style="font-size: 1.6rem; margin-top: 0.5rem; font-weight: 700;">
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <span class="badge badge-{{ alert.severity }}" style="font-size: 0.85rem; padding: 0.3rem 0.75rem;">
+          {{ alert.severity }} Severity
+        </span>
+        <span class="badge badge-status-{{ alert.status }}" style="font-size: 0.85rem; padding: 0.3rem 0.75rem;">
+          {{ alert.status|replace('_', ' ')|title }}
+        </span>
+        <span class="badge" style="background: rgba(6, 182, 212, 0.15); border-color: #06b6d4; color: #a5f3fc; font-size: 0.85rem; padding: 0.3rem 0.75rem;">
+          Client: {{ alert.client_name or 'Default' }}
+        </span>
+      </div>
+      <h1 style="font-size: 1.6rem; margin-top: 0.6rem; font-weight: 700;">
         Alert #{{ alert.id }}: <span style="color: #38bdf8;">{{ alert.rule }}</span>
       </h1>
       <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
@@ -34,11 +42,70 @@
   </div>
 </div>
 
+<!-- Security Analyst Triage & Status Panel -->
+<div class="panel" style="margin-bottom: 1.5rem; border: 1px solid rgba(56, 189, 248, 0.25); background: rgba(15, 23, 42, 0.85);">
+  <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.6rem;">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+        <path d="M9 11l3 3L22 4"></path>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+      </svg>
+      <span style="font-weight: 600; color: #38bdf8;">Analyst Incident Triage</span>
+    </div>
+    <span style="font-size: 0.8rem; color: var(--text-dim);">
+      {% if alert.updated_at %}Last triaged: {{ alert.updated_at }}{% else %}Unreviewed{% endif %}
+    </span>
+  </div>
+
+  {% if current_user and current_user.role in ['admin', 'analyst'] %}
+  <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" style="margin-top: 1rem;">
+    <div style="display: grid; grid-template-columns: 220px 1fr auto; gap: 1rem; align-items: start;">
+      <div>
+        <label for="statusSelect" style="display:block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">Change Status</label>
+        <select name="status" id="statusSelect" class="form-control" style="width: 100%;">
+          <option value="new" {% if alert.status == 'new' %}selected{% endif %}>New</option>
+          <option value="investigating" {% if alert.status == 'investigating' %}selected{% endif %}>Investigating</option>
+          <option value="resolved" {% if alert.status == 'resolved' %}selected{% endif %}>Resolved</option>
+          <option value="false_positive" {% if alert.status == 'false_positive' %}selected{% endif %}>False Positive</option>
+        </select>
+      </div>
+      <div>
+        <label for="analystNote" style="display:block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">Analyst Notes & Findings</label>
+        <textarea name="analyst_note" id="analystNote" class="form-control" rows="2" placeholder="Document root-cause, investigation notes, false-positive justification, or client communication..." style="width: 100%; resize: vertical; font-family: inherit;">{{ alert.analyst_note or '' }}</textarea>
+      </div>
+      <div style="margin-top: 1.6rem;">
+        <button type="submit" class="btn btn-primary" style="height: 38px;">Save Notes</button>
+      </div>
+    </div>
+  </form>
+  {% else %}
+  <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-size: 0.85rem; color: var(--text-muted);">Current Status:</span>
+      <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
+    </div>
+    <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem 1rem;">
+      <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.25rem;">Analyst Notes</div>
+      <div style="font-size: 0.88rem; color: var(--text-main); white-space: pre-wrap;">{{ alert.analyst_note or 'No notes recorded.' }}</div>
+    </div>
+    <div style="font-size: 0.78rem; color: #a78bfa;">
+      <em>Read-only view: Analyst or Admin credentials required to modify incident status and triage notes.</em>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
 <div class="detail-grid">
   <!-- Incident Metadata -->
   <div class="panel">
     <div class="panel-title">Incident Information</div>
     <dl class="info-list">
+      <dt>Status</dt>
+      <dd><span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span></dd>
+
+      <dt>Client / Site</dt>
+      <dd><code>{{ alert.client_name or 'Default' }}</code></dd>
+
       <dt>Detection Time</dt>
       <dd>{{ alert.detected_at }}</dd>
 
@@ -73,6 +140,25 @@
   <div class="panel">
     <div class="panel-title">Detection Rule Details</div>
     <dl class="info-list">
+      <dt>MITRE ATT&CK Mapping</dt>
+      <dd>
+        {% if alert.mitre_id and alert.mitre_id != 'N/A' %}
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <span class="badge" style="background: rgba(168, 85, 247, 0.15); border-color: #a855f7; color: #d8b4fe; font-size: 0.85rem; padding: 0.25rem 0.6rem;">
+              {{ alert.mitre_id }} &bull; {{ alert.mitre_name }}
+            </span>
+            <span style="font-size: 0.8rem; color: var(--text-dim);">(Tactic: {{ alert.mitre_tactic }})</span>
+            {% if alert.mitre_url %}
+            <a href="{{ alert.mitre_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="padding: 0.2rem 0.6rem; font-size: 0.75rem;">
+              View ATT&CK Matrix &nearr;
+            </a>
+            {% endif %}
+          </div>
+        {% else %}
+          <span style="color: var(--text-dim);">Unclassified</span>
+        {% endif %}
+      </dd>
+
       <dt>Total Triggered Packets</dt>
       <dd>{{ alert.packet_count }} packets</dd>
 

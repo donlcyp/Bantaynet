@@ -24,6 +24,7 @@ Usage::
 
 from __future__ import annotations
 
+import ipaddress
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Hashable
@@ -86,17 +87,39 @@ class Detector:
         self._open: dict[tuple, _Incident] = {}
         self._next_sweep: float | None = None
         self._max_evidence = cfg.evidence.max_packets
+        self.skipped_allowlist: int = 0
+        self._allowlisted_nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        if cfg.allowlist.enabled:
+            for entry in cfg.allowlist.ips:
+                try:
+                    self._allowlisted_nets.append(ipaddress.ip_network(entry, strict=False))
+                except ValueError:
+                    pass
+
+    def _is_allowlisted(self, ip_str: str) -> bool:
+        if not self._allowlisted_nets:
+            return False
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            return any(addr in net for net in self._allowlisted_nets)
+        except ValueError:
+            return False
 
     # -- public API ---------------------------------------------------------
 
     def process(self, rec: PacketRecord) -> list[Alert]:
         closed = self._sweep(rec.ts)
+        if self._is_allowlisted(rec.src):
+            self.skipped_allowlist += 1
+            return closed
         c = self.cfg
         if rec.proto == "TCP":
             if c.port_scan.enabled:
                 self._port_scan(rec)
             if c.slow_scan.enabled:
                 self._slow_scan(rec)
+            if c.host_sweep.enabled:
+                self._host_sweep(rec)
             if c.syn_burst.enabled:
                 self._syn_burst(rec)
             if c.suspicious_flags.enabled:
@@ -200,6 +223,23 @@ class Detector:
             inc = self._open_incident(key, "slow_scan", r.severity, rec.src, rec.dst, rec, w)
             inc.ports = ports
 
+    def _host_sweep(self, rec: PacketRecord) -> None:
+        if not rec.has_flags(clear=ACK | RST):
+            return
+        key = ("host_sweep", rec.src, rec.dport)
+        if inc := self._open.get(key):
+            self._extend(inc, rec)
+            inc.extra.setdefault("hosts", set()).add(rec.dst)
+            return
+        r = self.cfg.host_sweep
+        w = self._window(key, r.window_seconds)
+        w.add(rec.ts, rec.dst, rec.index)
+        if w.distinct >= r.distinct_hosts:
+            hosts = set(w.counts)
+            inc = self._open_incident(key, "host_sweep", r.severity, rec.src, f"Multiple ({len(hosts)} hosts)", rec, w)
+            inc.ports = {rec.dport}
+            inc.extra["hosts"] = hosts
+
     def _syn_burst(self, rec: PacketRecord) -> None:
         if not rec.has_flags(set_=SYN, clear=ACK | RST):
             return
@@ -277,6 +317,12 @@ class Detector:
         elif inc.rule == "slow_scan":
             details = {"distinct_ports": len(ports), "sample_ports": ports[:20]}
             summary = f"{inc.src} slowly probed {len(ports)} distinct TCP ports on {inc.dst} over {dur:.0f}s"
+        elif inc.rule == "host_sweep":
+            hosts = sorted(inc.extra.get("hosts", set()))
+            port = ports[0] if ports else 0
+            details = {"dport": port, "distinct_hosts": len(hosts), "sample_hosts": hosts[:20]}
+            summary = f"{inc.src} swept {len(hosts)} distinct hosts on port {port} in {dur:.1f}s"
+            inc.dst = f"Multiple ({len(hosts)} hosts)"
         elif inc.rule == "syn_burst":
             rate = inc.count / dur if dur > 0 else float(inc.count)
             details = {"dport": ports[0], "syn_count": inc.count, "rate_per_sec": round(rate, 1)}

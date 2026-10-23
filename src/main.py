@@ -21,7 +21,12 @@ def _export_all(path: Path) -> int:
         return write_alerts_csv(fh, get_alerts(limit=100_000))
 
 
-def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | None) -> int:
+def run_pipeline(
+    pcap_path: Path,
+    rules_path: Path | None,
+    export_path: Path | None,
+    client_name: str = "Default",
+) -> int:
     cfg = load_config(rules_path) if rules_path else load_config()
     start_time = time.perf_counter()
 
@@ -31,16 +36,19 @@ def run_pipeline(pcap_path: Path, rules_path: Path | None, export_path: Path | N
     result = analyze(pcap_path, cfg=cfg)
     elapsed = time.perf_counter() - start_time
 
-    store_alerts(result.alerts, pcap_path.name)
+    store_alerts(result.alerts, pcap_path.name, client_name=client_name)
 
     # Print summary table
     print("\n" + "=" * 65)
     print("                     BANTAYNET ANALYSIS SUMMARY")
     print("=" * 65)
     print(f" Source File      : {pcap_path.name}")
+    print(f" Client / Site    : {client_name}")
     print(f" Total Packets    : {result.stats.total}")
     print(f" IP Packets       : {result.stats.parsed}")
     print(f" Skipped Non-IP   : {result.stats.skipped_non_ip}")
+    if result.stats.skipped_allowlist > 0:
+        print(f" Skipped (Allow)  : {result.stats.skipped_allowlist} (allowlisted IPs)")
     print(f" Capture Duration : {result.stats.duration:.2f}s")
     print(f" Processing Time  : {elapsed:.3f}s")
     print(f" Total Alerts     : {len(result.alerts)}")
@@ -80,6 +88,7 @@ def main() -> int:
     )
     parser.add_argument("--pcap", type=Path, help="Path to PCAP/PCAPNG file for offline analysis")
     parser.add_argument("--rules", type=Path, help="Optional path to custom rules.yaml")
+    parser.add_argument("--client", type=str, default="Default", help="Client or site label for this capture")
     parser.add_argument("--export", type=Path, help="Export all stored alerts to CSV at specified path")
     parser.add_argument("--clear-db", action="store_true", help="Clear all stored alerts from database")
 
@@ -98,7 +107,7 @@ def main() -> int:
         parser.print_help()
         return 1
 
-    return run_pipeline(args.pcap, args.rules, args.export)
+    return run_pipeline(args.pcap, args.rules, args.export, client_name=args.client)
 
 
 if __name__ == "__main__":
