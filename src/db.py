@@ -260,12 +260,27 @@ def init_db(db_path: Path | str | None = None) -> str:
 VALID_ROLES = ("admin", "analyst", "viewer")
 
 
+def is_default_admin_password_active(db_path: Path | str | None = None) -> bool:
+    """Return True if the 'admin' account still uses the known default password 'admin123!'."""
+    try:
+        user = authenticate_user("admin", "admin123!", db_path=db_path)
+        return user is not None
+    except Exception:
+        return False
+
+
 def _seed_default_users(engine: str, conf: dict[str, Any]) -> None:
     """Ensure default accounts (admin, analyst, viewer) exist if users table is empty."""
+    import os
+
+    admin_pwd = os.environ.get("BANTAYNET_ADMIN_PASSWORD") or "admin123!"
+    analyst_pwd = os.environ.get("BANTAYNET_ANALYST_PASSWORD") or "analyst123!"
+    viewer_pwd = os.environ.get("BANTAYNET_VIEWER_PASSWORD") or "viewer123!"
+
     default_accounts = [
-        ("admin", "admin123!", "admin"),
-        ("analyst", "analyst123!", "analyst"),
-        ("viewer", "viewer123!", "viewer"),
+        ("admin", admin_pwd, "admin"),
+        ("analyst", analyst_pwd, "analyst"),
+        ("viewer", viewer_pwd, "viewer"),
     ]
     now_str = datetime.now(timezone.utc).isoformat()
 

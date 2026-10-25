@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import hmac
 import io
 import os
+import re
 import secrets
 import sys
+import time
 import uuid
+from collections import defaultdict
+from datetime import timedelta
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 from flask import (
     Flask,
@@ -44,6 +50,7 @@ from src.db import (
     get_summary_stats,
     get_user_by_id,
     init_db,
+    is_default_admin_password_active,
     log_audit_event,
     update_user_role,
 )
@@ -57,17 +64,60 @@ app = Flask(
     static_folder=str(PROJECT_ROOT / "dashboard" / "static"),
 )
 
+# Deployment & Session Security Configurations
 app.secret_key = os.environ.get("BANTAYNET_SECRET_KEY") or secrets.token_hex(32)
+if not os.environ.get("BANTAYNET_SECRET_KEY") and not app.config.get("TESTING"):
+    app.logger.warning(
+        "SECURITY WARNING: BANTAYNET_SECRET_KEY environment variable is not set! "
+        "A temporary random secret key was generated. Operator sessions will not survive server restarts. "
+        "Please configure BANTAYNET_SECRET_KEY before deploying to production."
+    )
+
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+if os.environ.get("BANTAYNET_COOKIE_SECURE") == "1":
+    app.config["SESSION_COOKIE_SECURE"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(
+    hours=int(os.environ.get("BANTAYNET_SESSION_HOURS", 8))
+)
+
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB maximum upload
 ALLOWED_EXTENSIONS = {".pcap", ".pcapng"}
+PCAP_MAGIC_NUMBERS = (
+    b"\xd4\xc3\xb2\xa1",  # Standard pcap (little endian)
+    b"\xa1\xb2\xc3\xd4",  # Standard pcap (big endian)
+    b"\x4d\x3c\xb2\xa1",  # Nanosecond pcap (little endian)
+    b"\xa1\xb2\x3c\x4d",  # Nanosecond pcap (big endian)
+    b"\x0a\x0d\x0d\x0a",  # PCAPNG section header block
+)
 
 UPLOAD_DIR = PROJECT_ROOT / "pcaps" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def generate_csrf_token() -> str:
+    """Generate or retrieve a cryptographically secure CSRF token for the session."""
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(32)
+    return session["csrf_token"]
+
+
 @app.before_request
-def load_logged_in_user():
+def security_and_auth_middleware():
     init_db()
+
+    # 1. CSRF Verification for state-changing HTTP methods
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        if not (app.config.get("TESTING") and not app.config.get("FORCE_CSRF_TESTING")):
+            token = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
+            expected = session.get("csrf_token")
+            if not token or not expected or not hmac.compare_digest(str(token), str(expected)):
+                app.logger.warning(
+                    f"CSRF protection triggered: missing or invalid token for {request.path} from IP {request.remote_addr}"
+                )
+                abort(403, description="CSRF security validation failed: missing or invalid security token.")
+
+    # 2. User Authentication Load
     user_id = session.get("user_id")
     if user_id is not None:
         g.current_user = get_user_by_id(user_id)
@@ -78,6 +128,32 @@ def load_logged_in_user():
         g.current_user = None
 
 
+@app.after_request
+def apply_security_headers(response: Response) -> Response:
+    """Inject OWASP recommended HTTP security headers."""
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=(), payment=()"
+
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data:; "
+        "frame-ancestors 'none';"
+    )
+    response.headers["Content-Security-Policy"] = csp
+
+    if request.is_secure or os.environ.get("BANTAYNET_COOKIE_SECURE") == "1":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    response.headers.pop("Server", None)
+    return response
+
+
 @app.context_processor
 def inject_global_data():
     from src.db import _get_active_engine, ACTIVE_ENGINE
@@ -86,7 +162,10 @@ def inject_global_data():
     return {
         "db_engine_name": engine_name,
         "current_user": getattr(g, "current_user", None),
+        "csrf_token": generate_csrf_token,
+        "is_default_admin_pw": is_default_admin_password_active(),
     }
+
 
 
 def login_required(view):
@@ -119,12 +198,68 @@ def is_allowed_file(filename: str) -> bool:
     return ext in ALLOWED_EXTENSIONS
 
 
+def is_valid_pcap_header(stream) -> bool:
+    """Validate PCAP / PCAPNG magic numbers to prevent malicious non-pcap files from being accepted."""
+    try:
+        pos = stream.tell()
+        magic = stream.read(4)
+        stream.seek(pos)
+        return any(magic == m for m in PCAP_MAGIC_NUMBERS)
+    except Exception:
+        return False
+
+
+def is_safe_url(target: str) -> bool:
+    """Ensure redirection target belongs strictly to the local host (prevents CWE-601 Open Redirect)."""
+    if not target:
+        return False
+    ref_url = urlsplit(request.host_url)
+    test_url = urlsplit(urljoin(request.host_url, target))
+    return test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc
+
+
+# Rate limiting storage for login endpoint
+_login_failures: dict[str, list[float]] = defaultdict(list)
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCKOUT_SECONDS = 300  # 5-minute lockout window
+
+
+def is_login_rate_limited(ip: str, username: str) -> bool:
+    """Check if IP or username has exceeded maximum failed authentication attempts."""
+    now = time.time()
+    for key in (ip, f"{ip}:{username.lower()}"):
+        recent = [t for t in _login_failures[key] if now - t < LOGIN_LOCKOUT_SECONDS]
+        _login_failures[key] = recent
+        if len(recent) >= LOGIN_MAX_FAILURES:
+            return True
+    return False
+
+
+def record_login_failure(ip: str, username: str):
+    now = time.time()
+    _login_failures[ip].append(now)
+    _login_failures[f"{ip}:{username.lower()}"].append(now)
+
+
+def clear_login_failures(ip: str, username: str):
+    _login_failures.pop(ip, None)
+    _login_failures.pop(f"{ip}:{username.lower()}", None)
+
+
 def _resolve_evidence(stored: str | None) -> Path | None:
     """Turn a stored (project-relative or legacy absolute) evidence path into a real path."""
     if not stored:
         return None
     p = Path(stored)
-    return p if p.is_absolute() else PROJECT_ROOT / p
+    real_path = p if p.is_absolute() else PROJECT_ROOT / p
+    try:
+        resolved = real_path.resolve()
+        # Path traversal guard: ensure target is within PROJECT_ROOT
+        if not resolved.is_relative_to(PROJECT_ROOT.resolve()):
+            return None
+        return resolved
+    except Exception:
+        return None
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -132,23 +267,42 @@ def login():
     if getattr(g, "current_user", None) is not None:
         return redirect(url_for("index"))
 
-    next_url = request.args.get("next") or request.form.get("next") or url_for("index")
+    raw_next = request.args.get("next") or request.form.get("next") or url_for("index")
+    next_url = raw_next if is_safe_url(raw_next) else url_for("index")
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
+        client_ip = request.remote_addr or "127.0.0.1"
+
+        if is_login_rate_limited(client_ip, username):
+            app.logger.warning(f"Login rate limit exceeded for '{username}' from {client_ip}")
+            log_audit_event("system", "rate_limit_lockout", f"IP: {client_ip}", f"Account: {username}")
+            flash(
+                "Too many failed login attempts. For security, this client is temporarily locked out. Please wait 5 minutes before trying again.",
+                "error",
+            )
+            return render_template("login.html", next=next_url), 429
 
         user = authenticate_user(username, password)
         if user:
+            clear_login_failures(client_ip, username)
             session.clear()
             session["user_id"] = user["id"]
+            # Ensure fresh CSRF token upon privilege change
+            session["csrf_token"] = secrets.token_hex(32)
+
             log_audit_event(user["username"], "login", "Web Portal", f"Role: {user['role']}")
             flash(f"Logged in successfully as {user['username']} ({user['role'].title()} role).", "success")
             return redirect(next_url)
         else:
+            record_login_failure(client_ip, username)
+            app.logger.warning(f"Failed authentication attempt for '{username}' from {client_ip}")
+            log_audit_event("anonymous", "failed_login", f"IP: {client_ip}", f"Attempted username: {username}")
             flash("Invalid username or password. Please verify credentials.", "error")
 
     return render_template("login.html", next=next_url)
+
 
 
 @app.route("/logout")
@@ -190,6 +344,14 @@ def add_user():
 
     if not username or not password:
         flash("Username and password are required.", "error")
+        return redirect(url_for("manage_users"))
+
+    # Password policy: minimum 8 characters, at least 1 letter, and at least 1 digit or symbol
+    if len(password) < 8:
+        flash("Security policy: password must be at least 8 characters long.", "error")
+        return redirect(url_for("manage_users"))
+    if not any(c.isalpha() for c in password) or not any(c.isdigit() or not c.isalnum() for c in password):
+        flash("Security policy: password must contain at least one letter and at least one digit or special character.", "error")
         return redirect(url_for("manage_users"))
 
     try:
@@ -380,7 +542,14 @@ def upload_pcap():
         flash("Invalid file type! Only .pcap and .pcapng files are permitted.", "error")
         return redirect(url_for("index"))
 
-    client_name = request.form.get("client_name", "Default").strip()[:64] or "Default"
+    # Security check: verify PCAP / PCAPNG magic header bytes
+    if not is_valid_pcap_header(file.stream):
+        flash("Security validation failed: uploaded file does not contain a valid PCAP or PCAPNG header.", "error")
+        return redirect(url_for("index"))
+
+    # Sanitize client name: keep only alphanumeric, spaces, and safe punctuation
+    raw_client = request.form.get("client_name", "Default")
+    client_name = re.sub(r"[^\w\s\.\-_/]", "", raw_client).strip()[:64] or "Default"
     dest_path = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{filename}"  # never overwrite earlier uploads
     file.save(str(dest_path))
 

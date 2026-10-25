@@ -24,6 +24,7 @@
   <div class="panel">
     <div class="panel-title">Add New User Account</div>
     <form method="POST" action="{{ url_for('add_user') }}" style="margin-top: 1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div style="margin-bottom: 1rem;">
         <label for="new_username" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Username</label>
         <input type="text" id="new_username" name="username" class="form-control" placeholder="e.g. jdoe, soc_analyst" required style="width: 100%;">
@@ -115,6 +116,7 @@
           <td style="font-size: 0.82rem; color: var(--text-muted);">{{ u.created_at[:19] if u.created_at else '-' }}</td>
           <td>
             <form method="POST" action="{{ url_for('change_user_role', user_id=u.id) }}" style="display: flex; gap: 0.4rem; align-items: center;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <label for="role-select-{{ u.id }}" class="visually-hidden">Role for {{ u.username }}</label>
               <select id="role-select-{{ u.id }}" name="role" class="form-control" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; height: 30px;" aria-label="Role for {{ u.username }}">
                 <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
@@ -129,6 +131,7 @@
               <span style="font-size: 0.75rem; color: var(--text-dim);">-</span>
             {% else %}
               <form method="POST" action="{{ url_for('remove_user', user_id=u.id) }}" onsubmit="return confirm('Delete operator account \'{{ u.username }}\'?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; color: #f87171; border-color: rgba(239,68,68,0.3);">
                   Delete
                 </button>

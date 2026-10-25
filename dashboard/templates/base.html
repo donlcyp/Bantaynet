@@ -188,6 +188,18 @@
     <div class="main-content-wrapper">
       <!-- Flash Messages -->
       <main class="container">
+        {% if current_user and is_default_admin_pw and current_user.role == 'admin' %}
+        <div style="margin-bottom: 1.25rem; padding: 0.85rem 1.25rem; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 8px; color: #fca5a5; display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.25rem;">⚠️</span>
+            <div style="font-size: 0.85rem; line-height: 1.4;">
+              <strong style="color: #ffffff;">Deployment Security Warning:</strong> The default administrator account is using the default initial password (<code>admin123!</code>). Change this password before deploying to production.
+            </div>
+          </div>
+          <a href="{{ url_for('manage_users') }}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.35rem 0.75rem; border-color: #ef4444; color: #ffffff; white-space: nowrap;">Manage Operators</a>
+        </div>
+        {% endif %}
+
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             <div class="flash-container">
@@ -219,6 +231,7 @@
       </p>
 
       <form action="{{ url_for('upload_pcap') }}" method="POST" enctype="multipart/form-data" id="uploadForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: #38bdf8; margin-bottom: 0.5rem;">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>

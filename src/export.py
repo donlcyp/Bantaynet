@@ -18,6 +18,13 @@ COLUMNS = [
 ]
 
 
+def _sanitize_csv_cell(val: Any) -> Any:
+    """Escape leading characters (=, +, -, @) that trigger spreadsheet formula execution."""
+    if isinstance(val, str) and val and val[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{val}"
+    return val
+
+
 def write_alerts_csv(fh: TextIO, rows: Iterable[dict[str, Any]]) -> int:
     """Write ``rows`` (dicts keyed like the DB columns) to ``fh``; return the row count."""
     writer = csv.writer(fh)
@@ -27,6 +34,12 @@ def write_alerts_csv(fh: TextIO, rows: Iterable[dict[str, Any]]) -> int:
         r = dict(row)
         if "mitre_tag" not in r:
             attach_mitre_info(r)
-        writer.writerow([r.get(key, "") if r.get(key) is not None else "" for key, _ in COLUMNS])
+        writer.writerow(
+            [
+                _sanitize_csv_cell(r.get(key, "")) if r.get(key) is not None else ""
+                for key, _ in COLUMNS
+            ]
+        )
         n += 1
     return n
+

@@ -68,6 +68,7 @@
 
   {% if current_user and current_user.role in ['admin', 'analyst'] %}
   <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" style="margin-top: 1rem;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div style="display: grid; grid-template-columns: 220px 1fr auto; gap: 1rem; align-items: start;">
       <div>
         <label for="statusSelect" style="display:block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">Change Status</label>
