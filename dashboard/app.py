@@ -39,13 +39,16 @@ from src.db import (
     get_alert_by_id,
     get_alerts,
     get_all_users,
+    get_audit_logs,
     get_chart_data,
     get_summary_stats,
     get_user_by_id,
     init_db,
+    log_audit_event,
     update_user_role,
 )
 from src.export import write_alerts_csv
+from src.report_pdf import generate_alert_pdf, generate_summary_pdf
 from src.store import store_alerts
 
 app = Flask(
@@ -139,6 +142,7 @@ def login():
         if user:
             session.clear()
             session["user_id"] = user["id"]
+            log_audit_event(user["username"], "login", "Web Portal", f"Role: {user['role']}")
             flash(f"Logged in successfully as {user['username']} ({user['role'].title()} role).", "success")
             return redirect(next_url)
         else:
@@ -149,9 +153,25 @@ def login():
 
 @app.route("/logout")
 def logout():
+    username = g.current_user.get("username", "user") if getattr(g, "current_user", None) else "user"
+    log_audit_event(username, "logout", "Web Portal", "Operator signed out")
     session.clear()
     flash("You have been signed out.", "success")
     return redirect(url_for("login"))
+
+
+@app.route("/audit")
+@role_required("admin")
+def audit_logs_view():
+    action = request.args.get("action", "").strip() or None
+    username = request.args.get("username", "").strip() or None
+    logs = get_audit_logs(limit=250, action=action, username=username)
+    return render_template(
+        "audit.html",
+        logs=logs,
+        filter_action=action or "",
+        filter_username=username or "",
+    )
 
 
 @app.route("/users")
@@ -174,6 +194,8 @@ def add_user():
 
     try:
         create_user(username, password, role)
+        admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+        log_audit_event(admin_user, "create_user", f"User '{username}'", f"Role: {role}")
         flash(f"User '{username}' created successfully with {role.title()} role.", "success")
     except ValueError as exc:
         flash(f"Error creating user: {exc}", "error")
@@ -193,6 +215,8 @@ def change_user_role(user_id: int):
 
     try:
         update_user_role(user_id, new_role)
+        admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+        log_audit_event(admin_user, "update_role", f"User #{user_id}", f"Role changed to {new_role}")
         flash(f"User role updated to '{new_role.title()}'.", "success")
     except Exception as exc:
         flash(f"Error updating role: {exc}", "error")
@@ -209,6 +233,8 @@ def remove_user(user_id: int):
 
     try:
         delete_user(user_id)
+        admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+        log_audit_event(admin_user, "delete_user", f"User #{user_id}", "Account deleted")
         flash("User removed successfully.", "success")
     except Exception as exc:
         flash(f"Error removing user: {exc}", "error")
@@ -323,6 +349,13 @@ def update_alert_status(alert_id: int):
     from src.db import update_alert_status_and_note
 
     update_alert_status_and_note(alert_id, new_status, analyst_note)
+    operator = g.current_user.get("username", "analyst") if getattr(g, "current_user", None) else "analyst"
+    log_audit_event(
+        operator,
+        "update_alert",
+        f"Alert #{alert_id} ({alert.get('rule')})",
+        f"Status: {new_status}. Note: {analyst_note[:100]}",
+    )
     flash(
         f"Alert #{alert_id} updated: status is now '{new_status.replace('_', ' ').title()}'.",
         "success",
@@ -356,6 +389,14 @@ def upload_pcap():
         result = analyze(dest_path, cfg=cfg)
 
         store_alerts(result.alerts, filename, client_name=client_name)
+
+        operator = g.current_user.get("username", "analyst") if getattr(g, "current_user", None) else "analyst"
+        log_audit_event(
+            operator,
+            "upload_pcap",
+            filename,
+            f"Client: {client_name}, {result.stats.parsed} pkts, {len(result.alerts)} alert(s) detected",
+        )
 
         msg = f"Successfully analyzed '{filename}' ({client_name}): {result.stats.parsed} packets parsed, {len(result.alerts)} alert(s) detected."
         if result.stats.skipped_allowlist > 0:
@@ -412,6 +453,108 @@ def export_csv():
         output.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=bantaynet_alerts.csv"},
+    )
+
+
+@app.route("/alert/<int:alert_id>/report.pdf")
+@login_required
+def alert_report_pdf(alert_id: int):
+    alert = get_alert_by_id(alert_id)
+    if not alert:
+        abort(404, description=f"Alert #{alert_id} not found")
+
+    evidence_packets = []
+    evidence_path = _resolve_evidence(alert.get("evidence_file"))
+    if evidence_path and evidence_path.is_file():
+        try:
+            from scapy.layers.inet import ICMP, IP, TCP, UDP
+            from scapy.utils import PcapReader
+
+            with PcapReader(str(evidence_path)) as reader:
+                first_ts = None
+                for idx, pkt in enumerate(reader):
+                    if idx >= 50:
+                        break
+                    ts = float(pkt.time)
+                    if first_ts is None:
+                        first_ts = ts
+                    rel_time = f"{ts - first_ts:.4f}"
+                    src = pkt[IP].src if IP in pkt else "Unknown"
+                    dst = pkt[IP].dst if IP in pkt else "Unknown"
+                    proto = "OTHER"
+                    flags = ""
+                    if TCP in pkt:
+                        proto = f"TCP/{pkt[TCP].dport}"
+                        flags = str(pkt[TCP].flags)
+                    elif UDP in pkt:
+                        proto = f"UDP/{pkt[UDP].dport}"
+                    elif ICMP in pkt:
+                        proto = f"ICMP Type {pkt[ICMP].type}"
+
+                    evidence_packets.append(
+                        {
+                            "num": idx + 1,
+                            "rel_time": rel_time,
+                            "src": src,
+                            "dst": dst,
+                            "proto": proto,
+                            "flags": flags,
+                            "len": len(pkt),
+                        }
+                    )
+        except Exception as e:
+            app.logger.warning(f"Could not parse evidence PCAP {evidence_path}: {e}")
+
+    pdf_buffer = io.BytesIO()
+    generate_alert_pdf(alert, evidence_packets, pdf_buffer)
+    pdf_buffer.seek(0)
+
+    operator = g.current_user.get("username", "user") if getattr(g, "current_user", None) else "user"
+    log_audit_event(operator, "export_pdf", f"Incident #{alert_id}", "Downloaded incident PDF report")
+
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"bantaynet_incident_{alert_id}.pdf",
+    )
+
+
+@app.route("/report/summary.pdf")
+@login_required
+def executive_summary_pdf():
+    rule = request.args.get("rule", "").strip() or None
+    severity = request.args.get("severity", "").strip() or None
+    src_ip = request.args.get("src_ip", "").strip() or None
+    status = request.args.get("status", "").strip() or None
+    client_name = request.args.get("client_name", "").strip() or None
+    search = request.args.get("search", "").strip() or None
+
+    alerts = get_alerts(
+        rule=rule,
+        severity=severity,
+        src_ip=src_ip,
+        status=status,
+        client_name=client_name,
+        search=search,
+        limit=500,
+    )
+    stats = get_summary_stats()
+
+    pdf_buffer = io.BytesIO()
+    generate_summary_pdf(alerts, stats, client_name, pdf_buffer)
+    pdf_buffer.seek(0)
+
+    operator = g.current_user.get("username", "user") if getattr(g, "current_user", None) else "user"
+    scope_str = f"Client: {client_name}" if client_name else "All Clients"
+    log_audit_event(operator, "export_summary_pdf", scope_str, f"Downloaded threat summary PDF ({len(alerts)} alerts)")
+
+    filename = f"bantaynet_summary_{client_name}.pdf" if client_name else "bantaynet_threat_summary.pdf"
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
     )
 
 

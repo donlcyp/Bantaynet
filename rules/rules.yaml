@@ -80,3 +80,13 @@ database:
   sqlite:
     path: bantaynet.db
 
+notifications:
+  enabled: false             # Set true to dispatch alert emails (e.g. SMTP / SOC mailbox)
+  smtp_server: "localhost"
+  smtp_port: 587
+  use_tls: true
+  sender: "alerts@bantaynet.local"
+  recipient: "soc@example.com"
+  min_severity: "high"
+
+

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}System & Security Audit Log - BantayNet{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+  <a href="{{ url_for('index') }}" class="btn btn-secondary" style="font-size: 0.8rem; margin-bottom: 1rem;">
+    &larr; Back to Dashboard
+  </a>
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1 style="font-size: 1.5rem; font-weight: 700;">
+        System & Operator <span style="color: #38bdf8;">Audit Log</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+        Chronological audit trail of operator logins, PCAP uploads, triage determinations, and administration events.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Filters Panel -->
+<div class="panel" style="margin-bottom: 1.5rem;">
+  <div class="panel-title">
+    <span>Filter Audit Records</span>
+    <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
+      Showing {{ logs|length }} log entry/entries
+    </span>
+  </div>
+
+  <form method="GET" action="{{ url_for('audit_logs_view') }}" class="filter-form">
+    <div class="form-group">
+      <label for="action">Action Type</label>
+      <select name="action" id="action" class="form-control">
+        <option value="">All Actions</option>
+        <option value="login" {% if filter_action == 'login' %}selected{% endif %}>User Login</option>
+        <option value="logout" {% if filter_action == 'logout' %}selected{% endif %}>User Logout</option>
+        <option value="upload_pcap" {% if filter_action == 'upload_pcap' %}selected{% endif %}>PCAP Upload & Analysis</option>
+        <option value="update_alert" {% if filter_action == 'update_alert' %}selected{% endif %}>Alert Triage Update</option>
+        <option value="create_user" {% if filter_action == 'create_user' %}selected{% endif %}>User Created</option>
+        <option value="update_role" {% if filter_action == 'update_role' %}selected{% endif %}>Role Modified</option>
+        <option value="delete_user" {% if filter_action == 'delete_user' %}selected{% endif %}>User Deleted</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="username">Operator / Username</label>
+      <input type="text" name="username" id="username" class="form-control" placeholder="e.g. admin, analyst" value="{{ filter_username }}">
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="height: 38px;">Filter Logs</button>
+    <a href="{{ url_for('audit_logs_view') }}" class="btn btn-secondary" style="height: 38px;">Reset</a>
+  </form>
+</div>
+
+<!-- Audit Log Table -->
+<div class="panel" style="padding: 0; overflow: hidden;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <h2 style="font-size: 1rem; font-weight: 600;">Recorded Audit Events</h2>
+  </div>
+
+  {% if logs %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Timestamp</th>
+          <th>Operator</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Details & Telemetry</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td style="color: var(--text-dim); font-weight: 600;">#{{ log.id }}</td>
+          <td style="font-size: 0.82rem; color: var(--text-muted); white-space: nowrap;">{{ log.timestamp[:19] }}</td>
+          <td style="font-weight: 600; color: #38bdf8;">{{ log.username }}</td>
+          <td>
+            {% if log.action == 'login' %}
+              <span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7;">LOGIN</span>
+            {% elif log.action == 'logout' %}
+              <span class="badge" style="background: rgba(148, 163, 184, 0.15); border-color: #94a3b8; color: #cbd5e1;">LOGOUT</span>
+            {% elif log.action == 'upload_pcap' %}
+              <span class="badge" style="background: rgba(56, 189, 248, 0.15); border-color: #38bdf8; color: #7dd3fc;">UPLOAD</span>
+            {% elif log.action == 'update_alert' %}
+              <span class="badge" style="background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #fcd34d;">TRIAGE</span>
+            {% elif 'user' in log.action or 'role' in log.action %}
+              <span class="badge" style="background: rgba(168, 85, 247, 0.15); border-color: #a855f7; color: #d8b4fe;">ADMIN</span>
+            {% else %}
+              <span class="code-badge">{{ log.action }}</span>
+            {% endif %}
+          </td>
+          <td style="font-weight: 500; color: var(--text-main);">{{ log.target or '-' }}</td>
+          <td style="font-size: 0.85rem; color: var(--text-muted); max-width: 450px;">
+            {{ log.details or '-' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No Audit Records Found</h3>
+    <p>Perform system actions or clear filter criteria above to inspect events.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

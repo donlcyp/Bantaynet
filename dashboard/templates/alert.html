@@ -27,8 +27,17 @@
         {{ alert.description }}
       </p>
     </div>
-    {% if alert.evidence_file %}
-    <div>
+    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+      <a href="{{ url_for('alert_report_pdf', alert_id=alert.id) }}" class="btn btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        Download Incident PDF
+      </a>
+      {% if alert.evidence_file %}
       <a href="{{ url_for('download_evidence', alert_id=alert.id) }}" class="btn btn-primary">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -37,8 +46,8 @@
         </svg>
         Download Evidence PCAP
       </a>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 </div>
 

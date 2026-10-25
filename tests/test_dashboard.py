@@ -12,10 +12,10 @@ from src.db import init_db, insert_alert
 def client(tmp_path, monkeypatch):
     test_db = tmp_path / "dash_test.db"
     monkeypatch.setattr("src.db.ACTIVE_ENGINE", "sqlite")
+    monkeypatch.setattr("src.db.DEFAULT_SQLITE_PATH", test_db)
     monkeypatch.setattr("src.db.DB_PATH", test_db)
     monkeypatch.setattr("dashboard.app.PROJECT_ROOT", tmp_path)
     init_db(test_db)
-
 
     insert_alert(
         rule="port_scan",
@@ -37,7 +37,8 @@ def test_index_page(client):
     assert res.status_code == 200
     assert b"Bantay" in res.data
     assert b"Port scan test alert" in res.data
-    assert b"AUTHORIZED LAB USE ONLY" in res.data
+    assert b"Total Detections" in res.data
+
 
 
 def test_alert_detail(client):

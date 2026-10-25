@@ -115,6 +115,17 @@ class AllowlistSettings:
 
 
 @dataclass(frozen=True)
+class NotificationSettings:
+    enabled: bool = False
+    smtp_server: str = "localhost"
+    smtp_port: int = 587
+    use_tls: bool = True
+    sender: str = "alerts@bantaynet.local"
+    recipient: str = "soc@example.com"
+    min_severity: str = "high"
+
+
+@dataclass(frozen=True)
 class Config:
     port_scan: PortScanRule = field(default_factory=PortScanRule)
     slow_scan: SlowScanRule = field(default_factory=SlowScanRule)
@@ -127,6 +138,7 @@ class Config:
     alerts: AlertSettings = field(default_factory=AlertSettings)
     evidence: EvidenceSettings = field(default_factory=EvidenceSettings)
     database: DatabaseSettings = field(default_factory=DatabaseSettings)
+    notifications: NotificationSettings = field(default_factory=NotificationSettings)
 
 
 # ---------------------------------------------------------------------------

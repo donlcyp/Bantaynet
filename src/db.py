@@ -158,6 +158,21 @@ def init_db(db_path: Path | str | None = None) -> str:
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        timestamp VARCHAR(64) NOT NULL,
+                        username VARCHAR(64) NOT NULL,
+                        action VARCHAR(64) NOT NULL,
+                        target VARCHAR(256),
+                        details TEXT,
+                        INDEX idx_audit_time (timestamp),
+                        INDEX idx_audit_user (username),
+                        INDEX idx_audit_action (action)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                    """
+                )
             conn.close()
             _seed_default_users("mysql", conf)
             return "mysql"
@@ -220,6 +235,22 @@ def init_db(db_path: Path | str | None = None) -> str:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target TEXT,
+                details TEXT
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);")
         conn.commit()
 
     _seed_default_users("sqlite", conf)
@@ -450,6 +481,83 @@ def delete_user(user_id: int, db_path: Path | str | None = None) -> bool:
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
     return True
+
+
+def log_audit_event(
+    username: str,
+    action: str,
+    target: str = "",
+    details: str = "",
+    timestamp: str | None = None,
+    db_path: Path | str | None = None,
+) -> int:
+    """Record an audit trail event."""
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+    if timestamp is None:
+        timestamp = datetime.now(timezone.utc).isoformat()
+    username = (username or "anonymous").strip()
+    action = (action or "").strip()
+    target = (target or "").strip()[:256]
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO audit_logs (timestamp, username, action, target, details) VALUES (%s, %s, %s, %s, %s)",
+                    (timestamp, username, action, target, details),
+                )
+                last_id = cur.lastrowid
+            conn.close()
+            return int(last_id)
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        cursor = conn.execute(
+            "INSERT INTO audit_logs (timestamp, username, action, target, details) VALUES (?, ?, ?, ?, ?)",
+            (timestamp, username, action, target, details),
+        )
+        conn.commit()
+        return int(cursor.lastrowid)
+
+
+def get_audit_logs(
+    limit: int = 200,
+    action: str | None = None,
+    username: str | None = None,
+    db_path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve recent audit logs in descending chronological order."""
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    query = "SELECT * FROM audit_logs WHERE 1=1"
+    params: list[Any] = []
+    if action:
+        query += " AND action = %s" if engine == "mysql" else " AND action = ?"
+        params.append(action)
+    if username:
+        query += " AND username = %s" if engine == "mysql" else " AND username = ?"
+        params.append(username)
+    query += " ORDER BY id DESC LIMIT %s" if engine == "mysql" else " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                rows = cur.fetchall()
+            conn.close()
+            return [dict(r) for r in rows]
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
 
 
 def _extract_port(details: dict[str, Any] | None) -> str | None:

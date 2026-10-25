@@ -70,70 +70,94 @@
   </div>
 </div>
 
-<!-- Filters Panel -->
-<div class="panel">
-  <div class="panel-title">
-    <span>Filter & Search Alerts</span>
-    <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
-      Showing {{ alerts|length }} incident(s)
-    </span>
+<!-- Filters Panel (Collapsible) -->
+{% set active_filters_count = (1 if filters.rule else 0) + (1 if filters.severity else 0) + (1 if filters.status else 0) + (1 if filters.client_name else 0) + (1 if filters.src_ip else 0) + (1 if filters.search else 0) %}
+<div class="panel" id="filterPanel" data-active-filters="{{ active_filters_count }}">
+
+  <div class="panel-title" style="margin-bottom: 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+      <span style="display: flex; align-items: center; gap: 0.45rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #38bdf8;">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        Filter &amp; Search Alerts
+      </span>
+      {% if active_filters_count > 0 %}
+      <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); font-size: 0.72rem; padding: 0.15rem 0.5rem;">
+        {{ active_filters_count }} Active Filter{{ 's' if active_filters_count > 1 else '' }}
+      </span>
+      {% endif %}
+      <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
+        Showing {{ alerts|length }} incident(s)
+      </span>
+    </div>
+
+    <button type="button" id="filterToggleBtn" class="btn btn-secondary btn-sm" onclick="toggleFilterPanel()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+      <svg id="filterChevronIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.2s ease;">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+      <span id="filterToggleLabel">Hide Filters</span>
+    </button>
   </div>
 
-  <form method="GET" action="{{ url_for('index') }}" class="filter-form">
-    <div class="form-group">
-      <label for="rule">Rule Type</label>
-      <select name="rule" id="rule" class="form-control">
-        <option value="">All Rules</option>
-        <option value="port_scan" {% if filters.rule == 'port_scan' %}selected{% endif %}>Port Scan</option>
-        <option value="slow_scan" {% if filters.rule == 'slow_scan' %}selected{% endif %}>Slow Scan</option>
-        <option value="host_sweep" {% if filters.rule == 'host_sweep' %}selected{% endif %}>Host Sweep</option>
-        <option value="syn_burst" {% if filters.rule == 'syn_burst' %}selected{% endif %}>SYN Burst</option>
-        <option value="suspicious_flags" {% if filters.rule == 'suspicious_flags' %}selected{% endif %}>Suspicious Flags</option>
-        <option value="cleartext" {% if filters.rule == 'cleartext' %}selected{% endif %}>Cleartext Protocols</option>
-        <option value="icmp_flood" {% if filters.rule == 'icmp_flood' %}selected{% endif %}>ICMP Flood</option>
-      </select>
-    </div>
+  <div id="filterCollapseBody" style="margin-top: 1.25rem; transition: all 0.25s ease;">
+    <form method="GET" action="{{ url_for('index') }}" class="filter-form">
+      <div class="form-group">
+        <label for="rule">Rule Type</label>
+        <select name="rule" id="rule" class="form-control">
+          <option value="">All Rules</option>
+          <option value="port_scan" {% if filters.rule == 'port_scan' %}selected{% endif %}>Port Scan</option>
+          <option value="slow_scan" {% if filters.rule == 'slow_scan' %}selected{% endif %}>Slow Scan</option>
+          <option value="host_sweep" {% if filters.rule == 'host_sweep' %}selected{% endif %}>Host Sweep</option>
+          <option value="syn_burst" {% if filters.rule == 'syn_burst' %}selected{% endif %}>SYN Burst</option>
+          <option value="suspicious_flags" {% if filters.rule == 'suspicious_flags' %}selected{% endif %}>Suspicious Flags</option>
+          <option value="cleartext" {% if filters.rule == 'cleartext' %}selected{% endif %}>Cleartext Protocols</option>
+          <option value="icmp_flood" {% if filters.rule == 'icmp_flood' %}selected{% endif %}>ICMP Flood</option>
+        </select>
+      </div>
 
-    <div class="form-group">
-      <label for="severity">Severity</label>
-      <select name="severity" id="severity" class="form-control">
-        <option value="">All Severities</option>
-        <option value="high" {% if filters.severity == 'high' %}selected{% endif %}>High</option>
-        <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
-        <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
-      </select>
-    </div>
+      <div class="form-group">
+        <label for="severity">Severity</label>
+        <select name="severity" id="severity" class="form-control">
+          <option value="">All Severities</option>
+          <option value="high" {% if filters.severity == 'high' %}selected{% endif %}>High</option>
+          <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
+          <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
+        </select>
+      </div>
 
-    <div class="form-group">
-      <label for="status">Status</label>
-      <select name="status" id="status" class="form-control">
-        <option value="">All Statuses</option>
-        <option value="new" {% if filters.status == 'new' %}selected{% endif %}>New</option>
-        <option value="investigating" {% if filters.status == 'investigating' %}selected{% endif %}>Investigating</option>
-        <option value="resolved" {% if filters.status == 'resolved' %}selected{% endif %}>Resolved</option>
-        <option value="false_positive" {% if filters.status == 'false_positive' %}selected{% endif %}>False Positive</option>
-      </select>
-    </div>
+      <div class="form-group">
+        <label for="status">Status</label>
+        <select name="status" id="status" class="form-control">
+          <option value="">All Statuses</option>
+          <option value="new" {% if filters.status == 'new' %}selected{% endif %}>New</option>
+          <option value="investigating" {% if filters.status == 'investigating' %}selected{% endif %}>Investigating</option>
+          <option value="resolved" {% if filters.status == 'resolved' %}selected{% endif %}>Resolved</option>
+          <option value="false_positive" {% if filters.status == 'false_positive' %}selected{% endif %}>False Positive</option>
+        </select>
+      </div>
 
-    <div class="form-group">
-      <label for="client_name">Client / Site</label>
-      <input type="text" name="client_name" id="client_name" class="form-control" placeholder="e.g. Branch 2, HQ" value="{{ filters.client_name }}">
-    </div>
+      <div class="form-group">
+        <label for="client_name">Client / Site</label>
+        <input type="text" name="client_name" id="client_name" class="form-control" placeholder="e.g. Branch 2, HQ" value="{{ filters.client_name }}">
+      </div>
 
-    <div class="form-group">
-      <label for="src_ip">Source IP</label>
-      <input type="text" name="src_ip" id="src_ip" class="form-control" placeholder="e.g. 10.0.0.66" value="{{ filters.src_ip }}">
-    </div>
+      <div class="form-group">
+        <label for="src_ip">Source IP</label>
+        <input type="text" name="src_ip" id="src_ip" class="form-control" placeholder="e.g. 10.0.0.66" value="{{ filters.src_ip }}">
+      </div>
 
-    <div class="form-group">
-      <label for="search">Keywords / Subnets</label>
-      <input type="text" name="search" id="search" class="form-control" placeholder="Search description, pcap, IP..." value="{{ filters.search }}">
-    </div>
+      <div class="form-group">
+        <label for="search">Keywords / Subnets</label>
+        <input type="text" name="search" id="search" class="form-control" placeholder="Search description, pcap, IP..." value="{{ filters.search }}">
+      </div>
 
-    <button type="submit" class="btn btn-primary" style="height: 38px;">Apply Filters</button>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary" style="height: 38px;">Reset</a>
-  </form>
+      <button type="submit" class="btn btn-primary" style="height: 38px;">Apply Filters</button>
+      <a href="{{ url_for('index') }}" class="btn btn-secondary" style="height: 38px;">Reset</a>
+    </form>
+  </div>
 </div>
+
 
 <!-- Alerts Table -->
 <div class="panel" style="padding: 0; overflow: hidden;">
@@ -242,214 +266,8 @@
 
 <!-- Offline Chart.js Visual Analytics Engine -->
 <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
-<script>
-  (function() {
-    const rawData = {{ chart_data|tojson }};
-    if (!rawData) return;
-
-    const colors = {
-      cyan: '#06b6d4',
-      cyanLight: '#38bdf8',
-      red: '#ef4444',
-      amber: '#f59e0b',
-      blue: '#3b82f6',
-      emerald: '#10b981',
-      purple: '#a855f7',
-      pink: '#ec4899',
-      textMuted: '#9ca3af',
-      grid: 'rgba(255, 255, 255, 0.07)'
-    };
-
-    if (window.Chart) {
-      Chart.defaults.color = colors.textMuted;
-      Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      Chart.defaults.font.size = 11;
-
-      // 1. Timeline Chart
-      const ctxTimeline = document.getElementById('timelineChart');
-      if (ctxTimeline) {
-        const labels = (rawData.timeline && rawData.timeline.labels && rawData.timeline.labels.length > 0)
-          ? rawData.timeline.labels
-          : ['No Timeline Data'];
-        const counts = (rawData.timeline && rawData.timeline.counts && rawData.timeline.counts.length > 0)
-          ? rawData.timeline.counts
-          : [0];
-
-        new Chart(ctxTimeline, {
-          type: 'line',
-          data: {
-            labels: labels,
-            datasets: [{
-              label: 'Alerts',
-              data: counts,
-              borderColor: colors.cyanLight,
-              backgroundColor: 'rgba(56, 189, 248, 0.12)',
-              borderWidth: 2,
-              tension: 0.3,
-              fill: true,
-              pointBackgroundColor: colors.cyan,
-              pointBorderColor: '#0a0e17',
-              pointBorderWidth: 1.5,
-              pointRadius: 3.5,
-              pointHoverRadius: 6,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                borderColor: colors.grid,
-                borderWidth: 1,
-              }
-            },
-            scales: {
-              x: { grid: { color: colors.grid } },
-              y: {
-                beginAtZero: true,
-                ticks: { precision: 0 },
-                grid: { color: colors.grid }
-              }
-            }
-          }
-        });
-      }
-
-      // 2. Top Sources Chart
-      const ctxTop = document.getElementById('topSourcesChart');
-      if (ctxTop) {
-        const labels = (rawData.top_sources && rawData.top_sources.labels && rawData.top_sources.labels.length > 0)
-          ? rawData.top_sources.labels
-          : ['No Active Hosts'];
-        const counts = (rawData.top_sources && rawData.top_sources.counts && rawData.top_sources.counts.length > 0)
-          ? rawData.top_sources.counts
-          : [0];
-
-        new Chart(ctxTop, {
-          type: 'bar',
-          data: {
-            labels: labels,
-            datasets: [{
-              label: 'Alerts',
-              data: counts,
-              backgroundColor: 'rgba(6, 182, 212, 0.65)',
-              borderColor: colors.cyan,
-              borderWidth: 1,
-              borderRadius: 4,
-            }]
-          },
-          options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                borderColor: colors.grid,
-                borderWidth: 1,
-              }
-            },
-            scales: {
-              x: {
-                beginAtZero: true,
-                ticks: { precision: 0 },
-                grid: { color: colors.grid }
-              },
-              y: { grid: { display: false } }
-            }
-          }
-        });
-      }
-
-      // 3. By Rule & ATT&CK Chart
-      const ctxRule = document.getElementById('byRuleChart');
-      if (ctxRule) {
-        const labels = (rawData.by_rule && rawData.by_rule.labels && rawData.by_rule.labels.length > 0)
-          ? rawData.by_rule.labels.map(function(r) { return r.replace('_', ' ').toUpperCase(); })
-          : ['No Detections'];
-        const counts = (rawData.by_rule && rawData.by_rule.counts && rawData.by_rule.counts.length > 0)
-          ? rawData.by_rule.counts
-          : [0];
-        const palette = [
-          '#ef4444', '#f59e0b', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981'
-        ];
-
-        new Chart(ctxRule, {
-          type: 'doughnut',
-          data: {
-            labels: labels,
-            datasets: [{
-              data: counts,
-              backgroundColor: palette.slice(0, labels.length),
-              borderColor: '#111827',
-              borderWidth: 2,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                position: 'right',
-                labels: { boxWidth: 10, padding: 8, color: colors.textMuted }
-              },
-              tooltip: {
-                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                borderColor: colors.grid,
-                borderWidth: 1,
-              }
-            },
-            cutout: '62%'
-          }
-        });
-      }
-
-      // 4. Severity Distribution Chart
-      const ctxSev = document.getElementById('severityChart');
-      if (ctxSev) {
-        new Chart(ctxSev, {
-          type: 'bar',
-          data: {
-            labels: ['High', 'Medium', 'Low'],
-            datasets: [{
-              label: 'Threat Count',
-              data: rawData.by_severity ? rawData.by_severity.counts : [0, 0, 0],
-              backgroundColor: [
-                'rgba(239, 68, 68, 0.75)',
-                'rgba(245, 158, 11, 0.75)',
-                'rgba(59, 130, 246, 0.75)'
-              ],
-              borderColor: [colors.red, colors.amber, colors.blue],
-              borderWidth: 1,
-              borderRadius: 4,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                borderColor: colors.grid,
-                borderWidth: 1,
-              }
-            },
-            scales: {
-              x: { grid: { display: false } },
-              y: {
-                beginAtZero: true,
-                ticks: { precision: 0 },
-                grid: { color: colors.grid }
-              }
-            }
-          }
-        });
-      }
-    }
-  })();
-</script>
+<script id="chart-data" type="application/json">{{ chart_data|tojson }}</script>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
 {% endblock %}
+
+
