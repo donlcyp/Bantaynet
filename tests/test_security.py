@@ -104,3 +104,73 @@ def test_csv_injection_sanitization():
     assert _sanitize_csv_cell("-2+3") == "'-2+3"
     assert _sanitize_csv_cell("@SUM(A1:A10)") == "'@SUM(A1:A10)"
     assert _sanitize_csv_cell("Normal Description") == "Normal Description"
+
+
+def test_password_standards_validation():
+    """Verify NIST SP 800-63B and OWASP password complexity standards."""
+    from src.security import validate_password_standards
+
+    # Empty
+    assert "empty" in validate_password_standards("")[0].lower()
+
+    # Too short (< 8)
+    errs = validate_password_standards("Ab1!")
+    assert any("at least 8 characters" in e for e in errs)
+
+    # Missing uppercase
+    errs = validate_password_standards("lowercase123!")
+    assert any("uppercase" in e for e in errs)
+
+    # Missing lowercase
+    errs = validate_password_standards("UPPERCASE123!")
+    assert any("lowercase" in e for e in errs)
+
+    # Missing digit
+    errs = validate_password_standards("NoDigitsHere!!")
+    assert any("number" in e for e in errs)
+
+    # Missing special symbol
+    errs = validate_password_standards("NoSpecialSymbol123")
+    assert any("special character" in e for e in errs)
+
+    # Contains username
+    errs = validate_password_standards("MyAdminUser123!", username="admin")
+    assert any("contain your username" in e for e in errs)
+
+    # Common weak password
+    errs = validate_password_standards("password123")
+    assert any("too common" in e for e in errs)
+
+    # Compliant passwords (including .env sample passwords)
+    assert validate_password_standards("?andMIN31241!") == []
+    assert validate_password_standards("!AnAlyzer3124!") == []
+    assert validate_password_standards("&vIEwer31514!") == []
+    assert validate_password_standards("Correct-Horse-Battery-Staple#99") == []
+
+
+def test_username_standards_validation():
+    """Verify username length and character set validation."""
+    from src.security import validate_username_standards
+
+    assert validate_username_standards("") != []
+    assert validate_username_standards("ab") != []  # Too short (< 3)
+    assert validate_username_standards("a" * 33) != []  # Too long (> 32)
+    assert validate_username_standards("user<script>") != []  # Invalid chars
+
+    # Valid
+    assert validate_username_standards("soc_analyst") == []
+    assert validate_username_standards("admin.soc-1") == []
+
+
+def test_login_input_error_checking(test_app_client):
+    """Verify login route rejects empty and oversized inputs with HTTP 400 and clear error messages."""
+    # Empty credentials
+    res_empty = test_app_client.post("/login", data={"username": "", "password": ""})
+    assert res_empty.status_code == 400
+    assert b"Please provide both username and password" in res_empty.data
+
+    # Oversized credentials
+    res_oversized = test_app_client.post("/login", data={"username": "a" * 70, "password": "p" * 150})
+    assert res_oversized.status_code == 400
+    assert b"exceeds allowed credential limits" in res_oversized.data
+

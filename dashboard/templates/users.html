@@ -32,7 +32,62 @@
 
       <div style="margin-bottom: 1rem;">
         <label for="new_password" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Password</label>
-        <input type="password" id="new_password" name="password" class="form-control" placeholder="••••••••" required style="width: 100%;">
+        <div class="password-input-group">
+          <input type="password" id="new_password" name="password" class="form-control" placeholder="••••••••" required style="width: 100%;" oninput="updatePasswordStrength()">
+          <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('new_password', this)" aria-label="Toggle password visibility" title="Show/Hide Password">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Live Password Strength Meter -->
+        <div class="password-strength-container">
+          <div class="password-strength-bar">
+            <div id="strengthFill" class="password-strength-fill"></div>
+          </div>
+          <div class="password-strength-label">
+            <span id="strengthText">Strength: Enter password</span>
+            <span style="color: var(--text-dim);">NIST SP 800-63B</span>
+          </div>
+        </div>
+
+        <!-- Real-time Standards Checklist -->
+        <ul class="password-checklist">
+          <li id="rule-len" class="checklist-rule invalid">
+            <span class="icon">○</span> At least 8 characters (max 128)
+          </li>
+          <li id="rule-upper" class="checklist-rule invalid">
+            <span class="icon">○</span> At least one uppercase letter (A-Z)
+          </li>
+          <li id="rule-lower" class="checklist-rule invalid">
+            <span class="icon">○</span> At least one lowercase letter (a-z)
+          </li>
+          <li id="rule-digit" class="checklist-rule invalid">
+            <span class="icon">○</span> At least one number (0-9)
+          </li>
+          <li id="rule-special" class="checklist-rule invalid">
+            <span class="icon">○</span> At least one special symbol (!@#$%^&*...)
+          </li>
+          <li id="rule-username" class="checklist-rule invalid">
+            <span class="icon">○</span> Cannot contain operator username
+          </li>
+        </ul>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label for="confirm_password" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Confirm Password</label>
+        <div class="password-input-group">
+          <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="••••••••" required style="width: 100%;" oninput="checkPasswordMatch()">
+          <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('confirm_password', this)" aria-label="Toggle confirm password visibility" title="Show/Hide Password">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+        <div id="matchIndicator" style="font-size: 0.75rem; margin-top: 0.35rem; display: none;"></div>
       </div>
 
       <div style="margin-bottom: 1.5rem;">
@@ -44,7 +99,7 @@
         </select>
       </div>
 
-      <button type="submit" class="btn btn-primary" style="width: 100%;">Create Account</button>
+      <button type="submit" id="createAccountBtn" class="btn btn-primary" style="width: 100%;">Create Account</button>
     </form>
   </div>
 
@@ -144,4 +199,100 @@
     </table>
   </div>
 </div>
+
+<script>
+  function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    btn.style.color = isPassword ? '#38bdf8' : 'var(--text-muted)';
+  }
+
+  function setRuleStatus(ruleId, isValid) {
+    const el = document.getElementById(ruleId);
+    if (!el) return;
+    if (isValid) {
+      el.className = 'checklist-rule valid';
+      el.querySelector('.icon').textContent = '✓';
+    } else {
+      el.className = 'checklist-rule invalid';
+      el.querySelector('.icon').textContent = '○';
+    }
+  }
+
+  function updatePasswordStrength() {
+    const pwd = document.getElementById('new_password').value;
+    const username = document.getElementById('new_username').value.trim().toLowerCase();
+
+    const hasLen = pwd.length >= 8 && pwd.length <= 128;
+    const hasUpper = /[A-Z]/.test(pwd);
+    const hasLower = /[a-z]/.test(pwd);
+    const hasDigit = /[0-9]/.test(pwd);
+    const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+    const notUsername = !(username.length >= 3 && pwd.toLowerCase().includes(username));
+
+    setRuleStatus('rule-len', hasLen);
+    setRuleStatus('rule-upper', hasUpper);
+    setRuleStatus('rule-lower', hasLower);
+    setRuleStatus('rule-digit', hasDigit);
+    setRuleStatus('rule-special', hasSpecial);
+    setRuleStatus('rule-username', notUsername);
+
+    let score = 0;
+    if (hasLen) score += 20;
+    if (pwd.length >= 12) score += 10;
+    if (hasUpper) score += 15;
+    if (hasLower) score += 15;
+    if (hasDigit) score += 20;
+    if (hasSpecial) score += 20;
+
+    const fill = document.getElementById('strengthFill');
+    const text = document.getElementById('strengthText');
+
+    if (pwd.length === 0) {
+      fill.style.width = '0%';
+      fill.style.backgroundColor = 'transparent';
+      text.textContent = 'Strength: Enter password';
+      text.style.color = 'var(--text-muted)';
+    } else if (score < 50) {
+      fill.style.width = Math.max(score, 15) + '%';
+      fill.style.backgroundColor = '#ef4444';
+      text.textContent = 'Strength: Weak (Non-compliant)';
+      text.style.color = '#ef4444';
+    } else if (score < 80) {
+      fill.style.width = score + '%';
+      fill.style.backgroundColor = '#f59e0b';
+      text.textContent = 'Strength: Moderate';
+      text.style.color = '#f59e0b';
+    } else {
+      fill.style.width = '100%';
+      fill.style.backgroundColor = '#10b981';
+      text.textContent = 'Strength: Strong (NIST SP 800-63B Compliant)';
+      text.style.color = '#10b981';
+    }
+
+    checkPasswordMatch();
+  }
+
+  function checkPasswordMatch() {
+    const pwd = document.getElementById('new_password').value;
+    const confirm = document.getElementById('confirm_password').value;
+    const indicator = document.getElementById('matchIndicator');
+
+    if (!confirm) {
+      indicator.style.display = 'none';
+      return;
+    }
+
+    indicator.style.display = 'block';
+    if (pwd === confirm) {
+      indicator.style.color = '#34d399';
+      indicator.textContent = '✓ Passwords match';
+    } else {
+      indicator.style.color = '#f87171';
+      indicator.textContent = '✗ Passwords do not match';
+    }
+  }
+</script>
 {% endblock %}

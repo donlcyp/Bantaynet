@@ -36,6 +36,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Automatically load environment variables from .env if present
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+
 from src.analyze import analyze
 from src.config import load_config
 from src.db import (
@@ -56,6 +64,7 @@ from src.db import (
 )
 from src.export import write_alerts_csv
 from src.report_pdf import generate_alert_pdf, generate_summary_pdf
+from src.security import validate_password_standards, validate_username_standards
 from src.store import store_alerts
 
 app = Flask(
@@ -275,11 +284,24 @@ def login():
         password = request.form.get("password", "")
         client_ip = request.remote_addr or "127.0.0.1"
 
+        # 1. Error checking: Empty fields
+        if not username or not password:
+            flash("Authentication error: Please provide both username and password.", "error")
+            return render_template("login.html", next=next_url), 400
+
+        # 2. Error checking: Input bounds (prevent memory/buffer exhaustion)
+        if len(username) > 64 or len(password) > 128:
+            flash("Authentication error: Input exceeds allowed credential limits (max 64 username, 128 password).", "error")
+            return render_template("login.html", next=next_url), 400
+
+        # 3. Error checking: Rate limiting lockout check
         if is_login_rate_limited(client_ip, username):
             app.logger.warning(f"Login rate limit exceeded for '{username}' from {client_ip}")
             log_audit_event("system", "rate_limit_lockout", f"IP: {client_ip}", f"Account: {username}")
+            failures = _login_failures.get(f"{client_ip}:{username.lower()}", []) or _login_failures.get(client_ip, [])
+            remaining_sec = max(1, int(LOGIN_LOCKOUT_SECONDS - (time.time() - failures[0]))) if failures else LOGIN_LOCKOUT_SECONDS
             flash(
-                "Too many failed login attempts. For security, this client is temporarily locked out. Please wait 5 minutes before trying again.",
+                f"Security Lockout: Too many failed attempts. For security, you are temporarily locked out. Please try again in {remaining_sec} seconds.",
                 "error",
             )
             return render_template("login.html", next=next_url), 429
@@ -299,7 +321,7 @@ def login():
             record_login_failure(client_ip, username)
             app.logger.warning(f"Failed authentication attempt for '{username}' from {client_ip}")
             log_audit_event("anonymous", "failed_login", f"IP: {client_ip}", f"Attempted username: {username}")
-            flash("Invalid username or password. Please verify credentials.", "error")
+            flash("Authentication error: Invalid username or password. Please verify credentials.", "error")
 
     return render_template("login.html", next=next_url)
 
@@ -340,18 +362,26 @@ def manage_users():
 def add_user():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
+    confirm_password = request.form.get("confirm_password", "")
     role = request.form.get("role", "viewer").strip().lower()
 
-    if not username or not password:
-        flash("Username and password are required.", "error")
+    # 1. Error checking: Username format & length standards
+    user_errors = validate_username_standards(username)
+    if user_errors:
+        for err in user_errors:
+            flash(f"Username error: {err}", "error")
         return redirect(url_for("manage_users"))
 
-    # Password policy: minimum 8 characters, at least 1 letter, and at least 1 digit or symbol
-    if len(password) < 8:
-        flash("Security policy: password must be at least 8 characters long.", "error")
+    # 2. Error checking: Password confirmation match
+    if confirm_password and password != confirm_password:
+        flash("Password error: Password confirmation does not match.", "error")
         return redirect(url_for("manage_users"))
-    if not any(c.isalpha() for c in password) or not any(c.isdigit() or not c.isalnum() for c in password):
-        flash("Security policy: password must contain at least one letter and at least one digit or special character.", "error")
+
+    # 3. Error checking: Comprehensive NIST/OWASP password standards
+    pwd_errors = validate_password_standards(password, username)
+    if pwd_errors:
+        for err in pwd_errors:
+            flash(f"Password standards error: {err}", "error")
         return redirect(url_for("manage_users"))
 
     try:
