@@ -115,7 +115,8 @@
           <td style="font-size: 0.82rem; color: var(--text-muted);">{{ u.created_at[:19] if u.created_at else '-' }}</td>
           <td>
             <form method="POST" action="{{ url_for('change_user_role', user_id=u.id) }}" style="display: flex; gap: 0.4rem; align-items: center;">
-              <select name="role" class="form-control" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; height: 30px;">
+              <label for="role-select-{{ u.id }}" class="visually-hidden">Role for {{ u.username }}</label>
+              <select id="role-select-{{ u.id }}" name="role" class="form-control" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; height: 30px;" aria-label="Role for {{ u.username }}">
                 <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
                 <option value="analyst" {% if u.role == 'analyst' %}selected{% endif %}>Analyst</option>
                 <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
