@@ -7,61 +7,205 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <!-- Authorized Lab Notice Banner -->
-  <div class="notice-banner">
-    <div>
-      <span class="notice-badge">AUTHORIZED LAB USE ONLY</span>
-      <span>System is strictly detect-and-alert only. Analyzes authorized lab traffic and offline PCAP files.</span>
-    </div>
-    <div style="font-size: 0.75rem; color: #c084fc;">Scapy & SQLite Engine</div>
-  </div>
-
   <!-- Header -->
   <header>
     <div class="navbar">
-      <a href="{{ url_for('index') }}" class="brand">
-        <div class="brand-icon">BN</div>
-        <div class="brand-name">Bantay<span>Net</span></div>
-      </a>
-      <div class="nav-links">
-        <a href="{{ url_for('index') }}" class="btn btn-secondary">Dashboard</a>
-        <button type="button" class="btn btn-primary" onclick="openUploadModal()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        {% if current_user %}
+        <button type="button" class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Navigation Menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
-          Upload PCAP
         </button>
-        <a href="{{ url_for('export_csv', rule=request.args.get('rule', ''), severity=request.args.get('severity', ''), src_ip=request.args.get('src_ip', ''), search=request.args.get('search', '')) }}" class="btn btn-secondary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          Export CSV
+        {% endif %}
+        <a href="{{ url_for('index') }}" class="brand">
+          <div class="brand-logo-svg" style="display: flex; align-items: center;">
+            <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#0284c7" />
+                  <stop offset="50%" stop-color="#06b6d4" />
+                  <stop offset="100%" stop-color="#0f172a" />
+                </linearGradient>
+                <linearGradient id="eyeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#38bdf8" />
+                  <stop offset="100%" stop-color="#06b6d4" />
+                </linearGradient>
+                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+              <!-- Shield border -->
+              <path d="M50 8 L85 24 V52 C85 74 50 92 50 92 C50 92 15 74 15 52 V24 Z" fill="#091322" stroke="url(#shieldGrad)" stroke-width="4" stroke-linejoin="round" />
+              <!-- Inner cyber circuit accents -->
+              <path d="M28 28 L40 40 H60 L72 28" stroke="#0284c7" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.7" />
+              <path d="M22 50 H36 M64 50 H78" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" />
+              <circle cx="22" cy="50" r="3" fill="#38bdf8" />
+              <circle cx="78" cy="50" r="3" fill="#38bdf8" />
+              <circle cx="36" cy="70" r="2.5" fill="#06b6d4" />
+              <circle cx="64" cy="70" r="2.5" fill="#06b6d4" />
+              <path d="M36 70 L50 82 L64 70" stroke="#0284c7" stroke-width="2" stroke-linecap="round" fill="none" />
+              <!-- Central Cyber Eye -->
+              <path d="M30 50 Q50 34 70 50 Q50 66 30 50 Z" fill="#042f2e" stroke="#38bdf8" stroke-width="2.5" filter="url(#glow)" />
+              <circle cx="50" cy="50" r="8" fill="url(#eyeGrad)" />
+              <circle cx="50" cy="50" r="4" fill="#020617" />
+              <circle cx="52" cy="48" r="1.5" fill="#ffffff" />
+            </svg>
+          </div>
+          <div>
+            <div class="brand-name">Bantay<span>Net</span></div>
+            <div style="font-size: 0.65rem; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase;">IntrusionAlert System</div>
+          </div>
         </a>
+      </div>
+
+      <!-- Top bar right: ONLY Role and Sign Out -->
+      <div class="nav-links">
+        {% if current_user %}
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div style="font-size: 0.85rem; text-align: right; line-height: 1.2;">
+            <span style="font-weight: 600; color: var(--text-main);">{{ current_user.username }}</span>
+            <span class="badge role-badge role-badge-{{ current_user.role }}">
+              {{ current_user.role|upper }}
+            </span>
+          </div>
+
+          <a href="{{ url_for('logout') }}" class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.82rem;" title="Sign Out">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Sign Out</span>
+          </a>
+        </div>
+        {% else %}
+        <a href="{{ url_for('login') }}" class="btn btn-primary">Sign In</a>
+        {% endif %}
       </div>
     </div>
   </header>
 
-  <!-- Flash Messages -->
-  <main class="container">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-container">
-          {% for category, message in messages %}
-            <div class="alert-flash alert-flash-{{ 'success' if category == 'success' else 'error' }}">
-              <span>{{ message }}</span>
-              <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;cursor:pointer;">&times;</button>
-            </div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
 
-    {% block content %}{% endblock %}
-  </main>
+  <!-- App Layout with Sidebar -->
+  <div class="app-layout {% if not current_user %}no-sidebar{% endif %}">
+    {% if current_user %}
+    <aside id="appSidebar" class="app-sidebar">
+      <div class="sidebar-inner">
+        <!-- Navigation Section -->
+        <div class="sidebar-section-label">Navigation</div>
+        <nav class="sidebar-nav">
+          <a href="{{ url_for('index') }}" class="sidebar-item {% if request.endpoint == 'index' %}active{% endif %}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>Dashboard</span>
+          </a>
+        </nav>
+
+        <!-- Operations Section -->
+        <div class="sidebar-section-label">Operations</div>
+        <nav class="sidebar-nav">
+          {% if current_user.role in ['admin', 'analyst'] %}
+          <button type="button" class="sidebar-item sidebar-btn-primary" onclick="openUploadModal()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <span>Upload PCAP</span>
+          </button>
+          {% endif %}
+
+          <a href="{{ url_for('export_csv', rule=request.args.get('rule', ''), severity=request.args.get('severity', ''), src_ip=request.args.get('src_ip', ''), status=request.args.get('status', ''), client_name=request.args.get('client_name', ''), search=request.args.get('search', '')) }}" class="sidebar-item">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Export CSV</span>
+          </a>
+
+          <a href="{{ url_for('executive_summary_pdf', rule=request.args.get('rule', ''), severity=request.args.get('severity', ''), src_ip=request.args.get('src_ip', ''), status=request.args.get('status', ''), client_name=request.args.get('client_name', ''), search=request.args.get('search', '')) }}" class="sidebar-item" title="Download Executive Threat Summary PDF">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            <span>Executive PDF</span>
+          </a>
+        </nav>
+
+        {% if current_user.role == 'admin' %}
+        <!-- Administration Section -->
+        <div class="sidebar-section-label">Administration</div>
+        <nav class="sidebar-nav">
+          <a href="{{ url_for('manage_users') }}" class="sidebar-item {% if request.endpoint == 'manage_users' %}active{% endif %}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span>User Management</span>
+          </a>
+          <a href="{{ url_for('audit_logs_view') }}" class="sidebar-item {% if request.endpoint == 'audit_logs_view' %}active{% endif %}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span>Audit Log</span>
+          </a>
+        </nav>
+        {% endif %}
+
+        <!-- System Telemetry Badge at bottom of sidebar -->
+        <div class="sidebar-footer">
+          <div class="sidebar-telemetry">
+            <div style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.75rem; color: #38bdf8; font-weight: 500;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+              <span>Scapy Engine</span>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.35rem;">
+              {{ db_engine_name }} &bull; Detect-Only
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+    {% endif %}
+
+    <div class="main-content-wrapper">
+      <!-- Flash Messages -->
+      <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-container">
+              {% for category, message in messages %}
+                <div class="alert-flash alert-flash-{{ 'success' if category == 'success' else 'error' }}">
+                  <span>{{ message }}</span>
+                  <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;cursor:pointer;">&times;</button>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
 
   <!-- Upload Modal -->
   <div id="uploadModal" class="modal">
@@ -85,6 +229,12 @@
           <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">Supports .pcap, .pcapng</div>
           <input type="file" id="fileInput" name="pcap_file" accept=".pcap,.pcapng" style="display:none;" onchange="updateFileName(this)">
         </div>
+
+        <div style="margin-top: 1rem; margin-bottom: 1.25rem;">
+          <label for="uploadClientName" style="display:block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.35rem; color: var(--text-main);">Client / Site Network</label>
+          <input type="text" id="uploadClientName" name="client_name" placeholder="e.g. Client A - Branch 2, Main Lab, HQ Office" maxlength="64" style="width: 100%; padding: 0.55rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.88rem; outline: none;">
+        </div>
+
         <div style="display:flex; justify-content: flex-end; gap: 0.75rem;">
           <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
           <button type="submit" class="btn btn-primary" id="analyzeSubmitBtn" disabled>Analyze Traffic</button>
@@ -108,11 +258,31 @@
     }
     // Close modal on click outside
     window.onclick = function(event) {
-      const modal = document.getElementById('uploadModal');
-      if (event.target === modal) {
+      const upModal = document.getElementById('uploadModal');
+      if (event.target === upModal) {
         closeUploadModal();
       }
     }
+
+    // Sidebar toggle
+    function toggleSidebar() {
+      const sb = document.getElementById('appSidebar');
+      if (sb) {
+        sb.classList.toggle('collapsed');
+        sb.classList.toggle('open');
+        const isCollapsed = sb.classList.contains('collapsed');
+        localStorage.setItem('bantaynet_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const pref = localStorage.getItem('bantaynet_sidebar_collapsed');
+      const sb = document.getElementById('appSidebar');
+      if (pref === 'true' && sb && window.innerWidth > 900) {
+        sb.classList.add('collapsed');
+      }
+    });
   </script>
 </body>
+
 </html>

@@ -242,9 +242,42 @@ def build_suspicious(rng: random.Random) -> list[Packet]:
     return pkts
 
 
+def build_hostsweep(rng: random.Random) -> list[Packet]:
+    pkts = background(rng, 0.0, 10.0)
+    t = 2.0
+    for i in range(1, 65):  # 64 different hosts probed on port 445
+        target_ip = f"10.0.1.{i}"
+        sport = rng.randint(40000, 60000)
+        pkts.append(
+            stamp(
+                eth_ip(ATTACKER, target_ip) / TCP(sport=sport, dport=445, flags="S", seq=rng.randint(1, 2**31)),
+                t,
+            )
+        )
+        t += 0.05
+    return pkts
+
+
+def build_slowscan(rng: random.Random) -> list[Packet]:
+    pkts = background(rng, 0.0, 250.0)
+    t = 5.0
+    for i, port in enumerate(range(1000, 1025)):  # 25 distinct ports probed over 192s
+        sport = rng.randint(40000, 60000)
+        pkts.append(
+            stamp(
+                eth_ip(ATTACKER, SERVER_WEB) / TCP(sport=sport, dport=port, flags="S", seq=rng.randint(1, 2**31)),
+                t,
+            )
+        )
+        t += 8.0
+    return pkts
+
+
 SCENARIOS = {
     "normal.pcap": build_normal,
     "portscan.pcap": build_portscan,
+    "slowscan.pcap": build_slowscan,
+    "hostsweep.pcap": build_hostsweep,
     "burst.pcap": build_burst,
     "suspicious.pcap": build_suspicious,
 }

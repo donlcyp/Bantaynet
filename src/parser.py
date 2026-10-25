@@ -61,6 +61,7 @@ class ParseStats:
     total: int = 0
     parsed: int = 0
     skipped_non_ip: int = 0
+    skipped_allowlist: int = 0
     protocols: Counter = field(default_factory=Counter)
     first_ts: float | None = None
     last_ts: float | None = None

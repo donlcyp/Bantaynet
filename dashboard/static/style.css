@@ -66,21 +66,24 @@ body {
 
 header {
   border-bottom: 1px solid var(--border-color);
-  background: rgba(10, 14, 23, 0.9);
+  background: rgba(10, 14, 23, 0.95);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 50;
+  height: 62px;
 }
 
 .navbar {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1rem 1.5rem;
+  width: 100%;
+  height: 100%;
+  padding: 0 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+
+
 
 .brand {
   display: flex;
@@ -134,7 +137,13 @@ header {
   border: 1px solid transparent;
 }
 
+.btn-sm {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+}
+
 .btn-primary {
+
   background: #2563eb;
   color: white;
   border-color: #3b82f6;
@@ -376,6 +385,30 @@ main.container {
   color: var(--severity-low-text);
 }
 
+.badge-status-new {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+.badge-status-investigating {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: #fbbf24;
+  color: #fde68a;
+}
+
+.badge-status-resolved {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #6ee7b7;
+}
+
+.badge-status-false_positive {
+  background: rgba(156, 163, 175, 0.15);
+  border-color: #9ca3af;
+  color: #d1d5db;
+}
+
 .code-badge {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   background: rgba(255, 255, 255, 0.06);
@@ -475,3 +508,251 @@ main.container {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.82rem;
 }
+
+/* Charts grid and cards */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-card {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-container {
+  position: relative;
+  height: 220px;
+  width: 100%;
+}
+
+/* MITRE ATT&CK badges */
+.mitre-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #d8b4fe;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+.mitre-tag:hover {
+  background: rgba(168, 85, 247, 0.3);
+  border-color: #c084fc;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.4);
+}
+
+.mitre-policy {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+}
+
+/* --------------------------------------------------------------------------
+ * App Layout & Sidebar Navigation
+ * -------------------------------------------------------------------------- */
+.app-layout {
+  display: flex;
+  min-height: calc(100vh - 62px);
+  width: 100%;
+}
+
+.app-sidebar {
+  width: 240px;
+  background: #0d1321;
+  border-right: 1px solid var(--border-color);
+  flex-shrink: 0;
+  transition: width 0.25s ease, transform 0.25s ease;
+  z-index: 40;
+}
+
+.app-sidebar.collapsed {
+  width: 0;
+  overflow: hidden;
+  border-right-color: transparent;
+}
+
+.sidebar-inner {
+  padding: 1.25rem 0.85rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 62px;
+  height: calc(100vh - 62px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+
+.sidebar-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0.5rem 0.75rem 0.35rem;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 1.25rem;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: transparent;
+  border: 1px solid transparent;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-item.active {
+  background: rgba(2, 132, 199, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+  font-weight: 600;
+}
+
+.sidebar-btn-primary {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(6, 182, 212, 0.25));
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.sidebar-btn-primary:hover {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.45), rgba(6, 182, 212, 0.45));
+  color: #ffffff;
+  border-color: #38bdf8;
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.3);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  padding-bottom: 0.5rem;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
+}
+
+
+.sidebar-telemetry {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+}
+
+.main-content-wrapper {
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.main-content-wrapper main.container {
+  max-width: 1350px;
+  margin: 1.5rem auto;
+  padding: 0 1.5rem;
+}
+
+.app-layout.no-sidebar .main-content-wrapper main.container {
+  max-width: 1200px;
+}
+
+.sidebar-toggle-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 6px;
+  padding: 0.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 900px) {
+  .app-sidebar {
+    position: fixed;
+    top: 62px;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  }
+
+  .app-sidebar.open {
+    transform: translateX(0);
+  }
+}
+
+/* User Role Badges */
+.role-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  margin-left: 0.35rem;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.role-badge-admin {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border-color: #38bdf8;
+}
+
+.role-badge-analyst {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: #10b981;
+}
+
+.role-badge-viewer {
+  background: rgba(167, 139, 250, 0.2);
+  color: #a78bfa;
+  border-color: #a78bfa;
+}
+
+

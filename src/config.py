@@ -40,6 +40,14 @@ class SlowScanRule:
 
 
 @dataclass(frozen=True)
+class HostSweepRule:
+    enabled: bool = True
+    severity: str = "medium"
+    window_seconds: float = 10.0
+    distinct_hosts: int = 50
+
+
+@dataclass(frozen=True)
 class SynBurstRule:
     enabled: bool = True
     severity: str = "high"
@@ -101,16 +109,36 @@ class DatabaseSettings:
 
 
 @dataclass(frozen=True)
+class AllowlistSettings:
+    enabled: bool = True
+    ips: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class NotificationSettings:
+    enabled: bool = False
+    smtp_server: str = "localhost"
+    smtp_port: int = 587
+    use_tls: bool = True
+    sender: str = "alerts@bantaynet.local"
+    recipient: str = "soc@example.com"
+    min_severity: str = "high"
+
+
+@dataclass(frozen=True)
 class Config:
     port_scan: PortScanRule = field(default_factory=PortScanRule)
     slow_scan: SlowScanRule = field(default_factory=SlowScanRule)
+    host_sweep: HostSweepRule = field(default_factory=HostSweepRule)
     syn_burst: SynBurstRule = field(default_factory=SynBurstRule)
     suspicious_flags: SuspiciousFlagsRule = field(default_factory=SuspiciousFlagsRule)
     cleartext_protocols: CleartextRule = field(default_factory=CleartextRule)
     icmp_flood: IcmpFloodRule = field(default_factory=IcmpFloodRule)
+    allowlist: AllowlistSettings = field(default_factory=AllowlistSettings)
     alerts: AlertSettings = field(default_factory=AlertSettings)
     evidence: EvidenceSettings = field(default_factory=EvidenceSettings)
     database: DatabaseSettings = field(default_factory=DatabaseSettings)
+    notifications: NotificationSettings = field(default_factory=NotificationSettings)
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +168,10 @@ def _check_type(section: str, key: str, value: Any, expected: type) -> Any:
         if not isinstance(value, dict):
             raise ConfigError(f"{name} must be a mapping, got {value!r}")
         return value
+    if expected is list:
+        if not isinstance(value, list):
+            raise ConfigError(f"{name} must be a list, got {value!r}")
+        return [str(v).strip() for v in value if str(v).strip()]
     return value
 
 

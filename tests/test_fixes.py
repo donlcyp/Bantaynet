@@ -20,7 +20,7 @@ T0 = 1_760_000_000.0
 
 
 def _syn(src, dst, dport, t):
-    p = Ether() / IP(src=src, dst=dst) / TCP(sport=40000, dport=dport, flags="S")
+    p = Ether(src="02:00:00:00:00:66", dst="02:00:00:00:00:10") / IP(src=src, dst=dst) / TCP(sport=40000, dport=dport, flags="S")
     p.time = t
     return p
 
@@ -88,7 +88,7 @@ def test_few_ports_no_alert(tmp_path, cfg):
 def test_icmpv6_flood_detected(tmp_path, cfg):
     pkts = []
     for i in range(150):
-        p = Ether() / IPv6(src="fd00::66", dst="fd00::10") / ICMPv6EchoRequest(seq=i)
+        p = Ether(src="02:00:00:00:00:66", dst="02:00:00:00:00:10") / IPv6(src="fd00::66", dst="fd00::10") / ICMPv6EchoRequest(seq=i)
         p.time = T0 + i * 0.005
         pkts.append(p)
     res = analyze(_write(tmp_path / "v6.pcap", pkts), cfg, evidence_dir=tmp_path)

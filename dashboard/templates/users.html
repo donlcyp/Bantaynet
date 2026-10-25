@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - BantayNet Security{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+  <a href="{{ url_for('index') }}" class="btn btn-secondary" style="font-size: 0.8rem; margin-bottom: 1rem;">
+    &larr; Back to Dashboard
+  </a>
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1 style="font-size: 1.5rem; font-weight: 700;">
+        User & Role <span style="color: #38bdf8;">Administration</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+        Manage SOC operator accounts and granular role permissions (Admin, Analyst, Viewer).
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="detail-grid">
+  <!-- Create User Card -->
+  <div class="panel">
+    <div class="panel-title">Add New User Account</div>
+    <form method="POST" action="{{ url_for('add_user') }}" style="margin-top: 1rem;">
+      <div style="margin-bottom: 1rem;">
+        <label for="new_username" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Username</label>
+        <input type="text" id="new_username" name="username" class="form-control" placeholder="e.g. jdoe, soc_analyst" required style="width: 100%;">
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label for="new_password" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Password</label>
+        <input type="password" id="new_password" name="password" class="form-control" placeholder="••••••••" required style="width: 100%;">
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <label for="new_role" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Security Role</label>
+        <select id="new_role" name="role" class="form-control" style="width: 100%;">
+          <option value="viewer">Viewer (Read-only alerts & exports)</option>
+          <option value="analyst">Analyst (Upload PCAPs & triage incidents)</option>
+          <option value="admin">Admin (Full administrative privileges)</option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Create Account</button>
+    </form>
+  </div>
+
+  <!-- Role Permissions Reference Card -->
+  <div class="panel">
+    <div class="panel-title">Role Permission Matrix</div>
+    <div style="margin-top: 0.75rem; font-size: 0.85rem; line-height: 1.6;">
+      <div style="padding: 0.75rem; margin-bottom: 0.6rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px;">
+        <strong style="color: #38bdf8;">Administrator:</strong>
+        <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
+          Full access to system operations: upload PCAP captures, triage incidents, add/remove user accounts, and change operator roles.
+        </p>
+      </div>
+
+      <div style="padding: 0.75rem; margin-bottom: 0.6rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px;">
+        <strong style="color: #34d399;">Analyst:</strong>
+        <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
+          Operational triage: upload authorized PCAPs, review forensic packets, update incident status (new, investigating, resolved, false_positive), and record investigation notes.
+        </p>
+      </div>
+
+      <div style="padding: 0.75rem; background: rgba(167, 139, 250, 0.08); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 6px;">
+        <strong style="color: #a78bfa;">Viewer:</strong>
+        <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
+          Read-only audit: inspect alerts, view analytics charts, download evidence PCAPs, and export CSV reports. Upload and triage modifications are disabled.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Existing Users Table -->
+<div class="panel" style="padding: 0; overflow: hidden; margin-top: 1rem;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <h2 style="font-size: 1.05rem; font-weight: 600;">Configured Operators ({{ users|length }})</h2>
+  </div>
+
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Created At</th>
+          <th>Change Role</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td style="color: var(--text-dim); font-weight: 600;">#{{ u.id }}</td>
+          <td style="font-weight: 600; color: var(--text-main);">
+            {{ u.username }}
+            {% if current_user and current_user.id == u.id %}
+              <span style="font-size: 0.7rem; color: #38bdf8; margin-left: 0.4rem;">(You)</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.role == 'admin' %}
+              <span class="badge" style="background: rgba(56, 189, 248, 0.15); border-color: #38bdf8; color: #7dd3fc;">Admin</span>
+            {% elif u.role == 'analyst' %}
+              <span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7;">Analyst</span>
+            {% else %}
+              <span class="badge" style="background: rgba(167, 139, 250, 0.15); border-color: #a78bfa; color: #c4b5fd;">Viewer</span>
+            {% endif %}
+          </td>
+          <td style="font-size: 0.82rem; color: var(--text-muted);">{{ u.created_at[:19] if u.created_at else '-' }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('change_user_role', user_id=u.id) }}" style="display: flex; gap: 0.4rem; align-items: center;">
+              <select name="role" class="form-control" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; height: 30px;">
+                <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                <option value="analyst" {% if u.role == 'analyst' %}selected{% endif %}>Analyst</option>
+                <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+              </select>
+              <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; height: 30px;">Update</button>
+            </form>
+          </td>
+          <td>
+            {% if current_user and current_user.id == u.id %}
+              <span style="font-size: 0.75rem; color: var(--text-dim);">-</span>
+            {% else %}
+              <form method="POST" action="{{ url_for('remove_user', user_id=u.id) }}" onsubmit="return confirm('Delete operator account \'{{ u.username }}\'?');">
+                <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; color: #f87171; border-color: rgba(239,68,68,0.3);">
+                  Delete
+                </button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

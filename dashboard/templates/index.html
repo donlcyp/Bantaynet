@@ -23,58 +23,150 @@
   </div>
 </div>
 
-<!-- Filters Panel -->
-<div class="panel">
-  <div class="panel-title">
-    <span>Filter & Search Alerts</span>
-    <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
-      Showing {{ alerts|length }} incident(s)
-    </span>
+<!-- Interactive Visual Analytics -->
+<div class="charts-grid">
+  <!-- Chart 1: Alerts Over Time -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Incident Activity Timeline</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Hourly Activity</span>
+    </div>
+    <div class="chart-container">
+      <canvas id="timelineChart"></canvas>
+    </div>
   </div>
 
-  <form method="GET" action="{{ url_for('index') }}" class="filter-form">
-    <div class="form-group">
-      <label for="rule">Rule Type</label>
-      <select name="rule" id="rule" class="form-control">
-        <option value="">All Rules</option>
-        <option value="port_scan" {% if filters.rule == 'port_scan' %}selected{% endif %}>Port Scan</option>
-        <option value="syn_burst" {% if filters.rule == 'syn_burst' %}selected{% endif %}>SYN Burst</option>
-        <option value="suspicious_flags" {% if filters.rule == 'suspicious_flags' %}selected{% endif %}>Suspicious Flags</option>
-        <option value="cleartext" {% if filters.rule == 'cleartext' %}selected{% endif %}>Cleartext Protocols</option>
-        <option value="icmp_flood" {% if filters.rule == 'icmp_flood' %}selected{% endif %}>ICMP Flood</option>
-      </select>
+  <!-- Chart 2: Top Attacking Source IPs -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Top Suspicious Source Hosts</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Top 5 Source IPs</span>
     </div>
-
-    <div class="form-group">
-      <label for="severity">Severity</label>
-      <select name="severity" id="severity" class="form-control">
-        <option value="">All Severities</option>
-        <option value="high" {% if filters.severity == 'high' %}selected{% endif %}>High</option>
-        <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
-        <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
-      </select>
+    <div class="chart-container">
+      <canvas id="topSourcesChart"></canvas>
     </div>
+  </div>
 
-    <div class="form-group">
-      <label for="src_ip">Source IP</label>
-      <input type="text" name="src_ip" id="src_ip" class="form-control" placeholder="e.g. 10.0.0.66" value="{{ filters.src_ip }}">
+  <!-- Chart 3: Detections by Rule & MITRE ATT&CK -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Detections by Attack Vector</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Rules & ATT&CK</span>
     </div>
-
-    <div class="form-group">
-      <label for="search">Keywords / Subnets</label>
-      <input type="text" name="search" id="search" class="form-control" placeholder="Search description, pcap, IP..." value="{{ filters.search }}">
+    <div class="chart-container">
+      <canvas id="byRuleChart"></canvas>
     </div>
+  </div>
 
-    <button type="submit" class="btn btn-primary" style="height: 38px;">Apply Filters</button>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary" style="height: 38px;">Reset</a>
-  </form>
+  <!-- Chart 4: Severity & Threat Distribution -->
+  <div class="panel chart-card">
+    <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>Severity & Threat Distribution</span>
+      <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;">Threat Levels</span>
+    </div>
+    <div class="chart-container">
+      <canvas id="severityChart"></canvas>
+    </div>
+  </div>
 </div>
+
+<!-- Filters Panel (Collapsible) -->
+{% set active_filters_count = (1 if filters.rule else 0) + (1 if filters.severity else 0) + (1 if filters.status else 0) + (1 if filters.client_name else 0) + (1 if filters.src_ip else 0) + (1 if filters.search else 0) %}
+<div class="panel" id="filterPanel" data-active-filters="{{ active_filters_count }}">
+
+  <div class="panel-title" style="margin-bottom: 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+      <span style="display: flex; align-items: center; gap: 0.45rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #38bdf8;">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        Filter &amp; Search Alerts
+      </span>
+      {% if active_filters_count > 0 %}
+      <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); font-size: 0.72rem; padding: 0.15rem 0.5rem;">
+        {{ active_filters_count }} Active Filter{{ 's' if active_filters_count > 1 else '' }}
+      </span>
+      {% endif %}
+      <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
+        Showing {{ alerts|length }} incident(s)
+      </span>
+    </div>
+
+    <button type="button" id="filterToggleBtn" class="btn btn-secondary btn-sm" onclick="toggleFilterPanel()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+      <svg id="filterChevronIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.2s ease;">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+      <span id="filterToggleLabel">Hide Filters</span>
+    </button>
+  </div>
+
+  <div id="filterCollapseBody" style="margin-top: 1.25rem; transition: all 0.25s ease;">
+    <form method="GET" action="{{ url_for('index') }}" class="filter-form">
+      <div class="form-group">
+        <label for="rule">Rule Type</label>
+        <select name="rule" id="rule" class="form-control">
+          <option value="">All Rules</option>
+          <option value="port_scan" {% if filters.rule == 'port_scan' %}selected{% endif %}>Port Scan</option>
+          <option value="slow_scan" {% if filters.rule == 'slow_scan' %}selected{% endif %}>Slow Scan</option>
+          <option value="host_sweep" {% if filters.rule == 'host_sweep' %}selected{% endif %}>Host Sweep</option>
+          <option value="syn_burst" {% if filters.rule == 'syn_burst' %}selected{% endif %}>SYN Burst</option>
+          <option value="suspicious_flags" {% if filters.rule == 'suspicious_flags' %}selected{% endif %}>Suspicious Flags</option>
+          <option value="cleartext" {% if filters.rule == 'cleartext' %}selected{% endif %}>Cleartext Protocols</option>
+          <option value="icmp_flood" {% if filters.rule == 'icmp_flood' %}selected{% endif %}>ICMP Flood</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="severity">Severity</label>
+        <select name="severity" id="severity" class="form-control">
+          <option value="">All Severities</option>
+          <option value="high" {% if filters.severity == 'high' %}selected{% endif %}>High</option>
+          <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
+          <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="status">Status</label>
+        <select name="status" id="status" class="form-control">
+          <option value="">All Statuses</option>
+          <option value="new" {% if filters.status == 'new' %}selected{% endif %}>New</option>
+          <option value="investigating" {% if filters.status == 'investigating' %}selected{% endif %}>Investigating</option>
+          <option value="resolved" {% if filters.status == 'resolved' %}selected{% endif %}>Resolved</option>
+          <option value="false_positive" {% if filters.status == 'false_positive' %}selected{% endif %}>False Positive</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="client_name">Client / Site</label>
+        <input type="text" name="client_name" id="client_name" class="form-control" placeholder="e.g. Branch 2, HQ" value="{{ filters.client_name }}">
+      </div>
+
+      <div class="form-group">
+        <label for="src_ip">Source IP</label>
+        <input type="text" name="src_ip" id="src_ip" class="form-control" placeholder="e.g. 10.0.0.66" value="{{ filters.src_ip }}">
+      </div>
+
+      <div class="form-group">
+        <label for="search">Keywords / Subnets</label>
+        <input type="text" name="search" id="search" class="form-control" placeholder="Search description, pcap, IP..." value="{{ filters.search }}">
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="height: 38px;">Apply Filters</button>
+      <a href="{{ url_for('index') }}" class="btn btn-secondary" style="height: 38px;">Reset</a>
+    </form>
+  </div>
+</div>
+
 
 <!-- Alerts Table -->
 <div class="panel" style="padding: 0; overflow: hidden;">
   <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
     <h2 style="font-size: 1rem; font-weight: 600;">Incident History</h2>
-    <div style="font-size: 0.8rem; color: var(--text-dim);">Live SQLite Database</div>
+    <div style="font-size: 0.8rem; color: var(--text-dim); display: flex; align-items: center; gap: 0.4rem;">
+      <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span>
+      <span>{{ db_engine_name }}</span>
+    </div>
   </div>
 
   {% if alerts %}
@@ -83,8 +175,10 @@
       <thead>
         <tr>
           <th>ID</th>
+          <th>Status</th>
+          <th>Client / Site</th>
           <th>Severity</th>
-          <th>Rule</th>
+          <th>Rule & ATT&CK</th>
           <th>Source IP</th>
           <th>Destination IP</th>
           <th>Target Port</th>
@@ -100,10 +194,29 @@
         <tr>
           <td style="color: var(--text-dim); font-weight: 600;">#{{ a.id }}</td>
           <td>
+            <span class="badge badge-status-{{ a.status }}">{{ a.status|replace('_', ' ')|title }}</span>
+          </td>
+          <td style="font-size: 0.82rem; color: #a5f3fc; font-weight: 500;">
+            {{ a.client_name or 'Default' }}
+          </td>
+          <td>
             <span class="badge badge-{{ a.severity }}">{{ a.severity }}</span>
           </td>
           <td>
-            <span class="code-badge">{{ a.rule }}</span>
+            <div style="display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap;">
+              <span class="code-badge">{{ a.rule }}</span>
+              {% if a.mitre_id and a.mitre_id != 'N/A' %}
+                {% if a.mitre_url %}
+                  <a href="{{ a.mitre_url }}" target="_blank" rel="noopener noreferrer" class="mitre-tag" title="{{ a.mitre_name }} ({{ a.mitre_tactic }})">
+                    {{ a.mitre_id }} &nearr;
+                  </a>
+                {% else %}
+                  <span class="mitre-tag mitre-policy" title="{{ a.mitre_name }}">
+                    {{ a.mitre_id }}
+                  </span>
+                {% endif %}
+              {% endif %}
+            </div>
           </td>
           <td class="ip-text">{{ a.src_ip }}</td>
           <td class="ip-text">{{ a.dst_ip or '-' }}</td>
@@ -150,4 +263,11 @@
   </div>
   {% endif %}
 </div>
+
+<!-- Offline Chart.js Visual Analytics Engine -->
+<script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+<script id="chart-data" type="application/json">{{ chart_data|tojson }}</script>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
 {% endblock %}
+
+

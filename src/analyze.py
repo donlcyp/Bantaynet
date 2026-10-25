@@ -51,6 +51,7 @@ def analyze(
     for rec in iter_packets(pcap, stats):
         alerts.extend(detector.process(rec))
     alerts.extend(detector.finish())
+    stats.skipped_allowlist = detector.skipped_allowlist
     alerts.sort(key=lambda a: (a.first_ts, a.rule, a.src, a.dst))
 
     if cfg.evidence.enabled and alerts:

@@ -16,6 +16,12 @@ slow_scan:
   window_seconds: 300        # long window catches low-and-slow probing
   distinct_ports: 20         # one src probing >= this many distinct dst ports on one dst within the window
 
+host_sweep:
+  enabled: true
+  severity: medium
+  window_seconds: 10         # sliding window length
+  distinct_hosts: 50         # one src probing the same port on >= 50 different hosts within the window
+
 syn_burst:
   enabled: true
   severity: high
@@ -46,6 +52,12 @@ icmp_flood:
   window_seconds: 2
   echo_requests: 100         # >= this many ICMP echo requests from one src to one dst within the window
 
+allowlist:
+  enabled: true
+  ips:
+    - "10.0.0.5"             # Known-good scanner / admin PC
+    # - "192.168.1.0/24"     # CIDR subnet ranges supported
+
 alerts:
   # Once a rule fires for a given (rule, src, dst) key, later matching packets are
   # folded into the same alert. The alert closes after this many seconds with no
@@ -67,4 +79,14 @@ database:
     database: bantaynet_db
   sqlite:
     path: bantaynet.db
+
+notifications:
+  enabled: false             # Set true to dispatch alert emails (e.g. SMTP / SOC mailbox)
+  smtp_server: "localhost"
+  smtp_port: 587
+  use_tls: true
+  sender: "alerts@bantaynet.local"
+  recipient: "soc@example.com"
+  min_severity: "high"
+
 

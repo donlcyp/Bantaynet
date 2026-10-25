@@ -6,7 +6,7 @@ from src.alerts import Alert
 from src.db import init_db, insert_alert
 
 
-def store_alerts(alerts: list[Alert], source_pcap: str) -> None:
+def store_alerts(alerts: list[Alert], source_pcap: str, client_name: str = "Default") -> None:
     """Persist every alert from one analysis run."""
     init_db()
     for a in alerts:
@@ -23,4 +23,5 @@ def store_alerts(alerts: list[Alert], source_pcap: str) -> None:
             packet_count=a.packet_count,
             details=a.details,
             dst_port=a.dst_port,
+            client_name=client_name or "Default",
         )

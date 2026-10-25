@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - BantayNet Security Monitoring{% endblock %}
+
+{% block content %}
+<div style="max-width: 440px; margin: 3rem auto 2rem; padding: 2.5rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);">
+  <div style="text-align: center; margin-bottom: 2rem;">
+    <div style="display: inline-block; margin-bottom: 0.75rem;">
+      <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="loginShieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0284c7" />
+            <stop offset="50%" stop-color="#06b6d4" />
+            <stop offset="100%" stop-color="#0f172a" />
+          </linearGradient>
+          <linearGradient id="loginEyeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#38bdf8" />
+            <stop offset="100%" stop-color="#06b6d4" />
+          </linearGradient>
+        </defs>
+        <path d="M50 8 L85 24 V52 C85 74 50 92 50 92 C50 92 15 74 15 52 V24 Z" fill="#091322" stroke="url(#loginShieldGrad)" stroke-width="4" stroke-linejoin="round" />
+        <path d="M30 50 Q50 34 70 50 Q50 66 30 50 Z" fill="#042f2e" stroke="#38bdf8" stroke-width="2.5" />
+        <circle cx="50" cy="50" r="7" fill="url(#loginEyeGrad)" />
+        <circle cx="50" cy="50" r="3" fill="#020617" />
+      </svg>
+    </div>
+    <h1 style="font-size: 1.5rem; font-weight: 700; color: var(--text-main);">Bantay<span style="color: #38bdf8;">Net</span> Authentication</h1>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+      Authorized SOC & Security Personnel Portal
+    </p>
+  </div>
+
+  <form method="POST" action="{{ url_for('login') }}">
+    <input type="hidden" name="next" value="{{ next }}">
+
+    <div style="margin-bottom: 1.25rem;">
+      <label for="username" style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">
+        Username
+      </label>
+      <input type="text" id="username" name="username" class="form-control" placeholder="e.g. admin, analyst, viewer" required autofocus style="width: 100%; padding: 0.65rem 0.85rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+    </div>
+
+    <div style="margin-bottom: 1.75rem;">
+      <label for="password" style="display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">
+        Password
+      </label>
+      <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required style="width: 100%; padding: 0.65rem 0.85rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-weight: 600; font-size: 0.95rem;">
+      Sign In
+    </button>
+  </form>
+
+  <div style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color); font-size: 0.78rem; color: var(--text-dim); line-height: 1.6;">
+    <div style="font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem;">Default Security Roles:</div>
+    <div>&bull; <strong style="color: #38bdf8;">Admin:</strong> <code>admin</code> / <code>admin123!</code> (Full control, manage users)</div>
+    <div>&bull; <strong style="color: #34d399;">Analyst:</strong> <code>analyst</code> / <code>analyst123!</code> (Upload PCAPs, triage alerts)</div>
+    <div>&bull; <strong style="color: #a78bfa;">Viewer:</strong> <code>viewer</code> / <code>viewer123!</code> (Read-only forensics & export)</div>
+  </div>
+</div>
+{% endblock %}
