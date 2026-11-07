@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 import smtplib
+import socket
 import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -37,7 +38,10 @@ def _get_smtp_credentials() -> dict[str, Any]:
     """Retrieve SMTP configuration favoring Gmail settings if configured."""
     gmail_user = (os.environ.get("GMAIL_USER") or os.environ.get("BANTAYNET_SMTP_USER") or "").strip()
     gmail_pass = (os.environ.get("GMAIL_APP_PASSWORD") or os.environ.get("BANTAYNET_SMTP_PASSWORD") or "").strip()
-    smtp_server = (os.environ.get("BANTAYNET_SMTP_SERVER") or ("smtp.gmail.com" if gmail_user else "localhost")).strip()
+    smtp_server = (
+        os.environ.get("BANTAYNET_SMTP_SERVER")
+        or ("smtp.gmail.com" if (gmail_user or gmail_pass) else "localhost")
+    ).strip()
     smtp_port = int(os.environ.get("BANTAYNET_SMTP_PORT") or "587")
     sender = gmail_user or os.environ.get("BANTAYNET_SMTP_SENDER") or "alerts@bantaynet.local"
 
@@ -49,6 +53,36 @@ def _get_smtp_credentials() -> dict[str, Any]:
         "sender": sender,
         "use_tls": True,
     }
+
+
+def _connect_smtp(server_host: str, port: int, use_tls: bool = True, timeout: int = 10) -> smtplib.SMTP:
+    """Connect to SMTP prioritizing IPv4 addresses to prevent '[Errno 101] Network is unreachable' on Linux/Docker/Render containers."""
+    target_host = server_host
+    try:
+        # Resolve IPv4 specifically to prevent broken IPv6 routing on cloud containers
+        addr_info = socket.getaddrinfo(server_host, port, socket.AF_INET, socket.SOCK_STREAM)
+        if addr_info:
+            target_host = addr_info[0][4][0]
+    except Exception:
+        target_host = server_host
+
+    if port == 465:
+        server = smtplib.SMTP_SSL(target_host, port, timeout=timeout)
+        server.ehlo(server_host)
+        return server
+
+    try:
+        server = smtplib.SMTP(target_host, port, timeout=timeout)
+        server.ehlo(server_host)
+        if use_tls:
+            server.starttls()
+            server.ehlo(server_host)
+        return server
+    except (OSError, socket.error) as exc:
+        if ("gmail.com" in server_host.lower()) and port != 465:
+            logger.info("SMTP port %s unreachable (%s); attempting Gmail SSL fallback on port 465...", port, exc)
+            return _connect_smtp(server_host, 465, use_tls=False, timeout=timeout)
+        raise
 
 
 def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tuple[bool, str]:
@@ -110,9 +144,7 @@ def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tupl
         msg.attach(MIMEText(text_content, "plain"))
         msg.attach(MIMEText(html_content, "html"))
 
-        server = smtplib.SMTP(conf["server"], conf["port"], timeout=10)
-        if conf["use_tls"]:
-            server.starttls()
+        server = _connect_smtp(conf["server"], conf["port"], use_tls=conf["use_tls"], timeout=10)
         if conf["user"] and conf["password"]:
             server.login(conf["user"], conf["password"])
 
@@ -206,9 +238,7 @@ def send_account_created_email(
         msg.attach(MIMEText(text_content, "plain"))
         msg.attach(MIMEText(html_content, "html"))
 
-        server = smtplib.SMTP(conf["server"], conf["port"], timeout=10)
-        if conf["use_tls"]:
-            server.starttls()
+        server = _connect_smtp(conf["server"], conf["port"], use_tls=conf["use_tls"], timeout=10)
         if conf["user"] and conf["password"]:
             server.login(conf["user"], conf["password"])
 
@@ -276,9 +306,7 @@ def send_alert_email(
         sender = settings.sender if settings.sender != "alerts@bantaynet.local" else conf["sender"]
         password = conf["password"] or os.environ.get("BANTAYNET_SMTP_PASSWORD", "")
 
-        server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
-        if settings.use_tls:
-            server.starttls()
+        server = _connect_smtp(smtp_server, smtp_port, use_tls=settings.use_tls, timeout=10)
         if password and conf["user"]:
             server.login(conf["user"], password)
         elif password:
@@ -356,9 +384,7 @@ def test_smtp_connection(recipient_email: str) -> tuple[bool, str]:
         msg.attach(MIMEText(body_text, "plain"))
         msg.attach(MIMEText(body_html, "html"))
 
-        server = smtplib.SMTP(conf["server"], conf["port"], timeout=15)
-        if conf["use_tls"]:
-            server.starttls()
+        server = _connect_smtp(conf["server"], conf["port"], use_tls=conf["use_tls"], timeout=15)
         server.login(conf["user"], conf["password"])
         server.send_message(msg)
         server.quit()
