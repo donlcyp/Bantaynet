@@ -4,6 +4,8 @@
  */
 
 (function () {
+  let activeCharts = [];
+
   function initCharts() {
     const dataElement = document.getElementById("chart-data");
     if (!dataElement) return;
@@ -16,6 +18,14 @@
     }
     if (!rawData || !window.Chart) return;
 
+    activeCharts.forEach(function (c) {
+      try {
+        c.destroy();
+      } catch (e) {}
+    });
+    activeCharts = [];
+
+    const isLight = document.documentElement.getAttribute("data-theme") === "light";
     const colors = {
       cyan: "#06b6d4",
       cyanLight: "#38bdf8",
@@ -25,8 +35,9 @@
       emerald: "#10b981",
       purple: "#a855f7",
       pink: "#ec4899",
-      textMuted: "#9ca3af",
-      grid: "rgba(255, 255, 255, 0.07)",
+      textMuted: isLight ? "#475569" : "#9ca3af",
+      grid: isLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.07)",
+      cardBg: isLight ? "#ffffff" : "#111827",
     };
 
     Chart.defaults.color = colors.textMuted;
@@ -45,7 +56,7 @@
           ? rawData.timeline.counts
           : [0];
 
-      new Chart(ctxTimeline, {
+      const chart1 = new Chart(ctxTimeline, {
         type: "line",
         data: {
           labels: labels,
@@ -87,6 +98,7 @@
           },
         },
       });
+      activeCharts.push(chart1);
     }
 
     // 2. Top Sources Chart
@@ -101,7 +113,7 @@
           ? rawData.top_sources.counts
           : [0];
 
-      new Chart(ctxTop, {
+      const chart2 = new Chart(ctxTop, {
         type: "bar",
         data: {
           labels: labels,
@@ -138,6 +150,7 @@
           },
         },
       });
+      activeCharts.push(chart2);
     }
 
     // 3. By Rule & ATT&CK Chart
@@ -155,7 +168,7 @@
           : [0];
       const palette = ["#ef4444", "#f59e0b", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#10b981"];
 
-      new Chart(ctxRule, {
+      const chart3 = new Chart(ctxRule, {
         type: "doughnut",
         data: {
           labels: labels,
@@ -163,7 +176,7 @@
             {
               data: counts,
               backgroundColor: palette.slice(0, labels.length),
-              borderColor: "#111827",
+              borderColor: colors.cardBg,
               borderWidth: 2,
             },
           ],
@@ -185,12 +198,13 @@
           cutout: "62%",
         },
       });
+      activeCharts.push(chart3);
     }
 
     // 4. Severity Distribution Chart
     const ctxSev = document.getElementById("severityChart");
     if (ctxSev) {
-      new Chart(ctxSev, {
+      const chart4 = new Chart(ctxSev, {
         type: "bar",
         data: {
           labels: ["High", "Medium", "Low"],
@@ -230,6 +244,7 @@
           },
         },
       });
+      activeCharts.push(chart4);
     }
   }
 
@@ -253,6 +268,10 @@
       localStorage.setItem("bantaynet_filters_hidden", "true");
     }
   };
+
+  window.addEventListener("themeChanged", function () {
+    initCharts();
+  });
 
   document.addEventListener("DOMContentLoaded", function () {
     initCharts();

@@ -3,6 +3,9 @@
   --bg-secondary: #111827;
   --bg-card: rgba(17, 24, 39, 0.85);
   --bg-hover: #1f293d;
+  --header-bg: rgba(10, 14, 23, 0.95);
+  --sidebar-bg: #0d1321;
+  --input-bg: #0f1523;
   --border-color: rgba(255, 255, 255, 0.08);
   --border-glow: rgba(59, 130, 246, 0.3);
   --text-main: #f3f4f6;
@@ -23,6 +26,36 @@
 
   --accent-cyan: #06b6d4;
   --accent-emerald: #10b981;
+}
+
+[data-theme="light"] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --header-bg: rgba(255, 255, 255, 0.95);
+  --sidebar-bg: #ffffff;
+  --input-bg: #ffffff;
+  --border-color: #cbd5e1;
+  --border-glow: rgba(59, 130, 246, 0.2);
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #64748b;
+
+  --severity-high-bg: #fee2e2;
+  --severity-high-border: #f87171;
+  --severity-high-text: #b91c1c;
+
+  --severity-med-bg: #fef3c7;
+  --severity-med-border: #fbbf24;
+  --severity-med-text: #b45309;
+
+  --severity-low-bg: #e0f2fe;
+  --severity-low-border: #60a5fa;
+  --severity-low-text: #0369a1;
+
+  --accent-cyan: #0284c7;
+  --accent-emerald: #059669;
 }
 
 * {
@@ -66,12 +99,13 @@ body {
 
 header {
   border-bottom: 1px solid var(--border-color);
-  background: rgba(10, 14, 23, 0.95);
+  background: var(--header-bg);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 50;
   height: 62px;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .navbar {
@@ -333,14 +367,19 @@ main.container {
 }
 
 .form-control {
-  background: #0f1523;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--text-main);
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+select.form-control option {
+  background: var(--bg-card);
+  color: var(--text-main);
 }
 
 .form-control:focus {
@@ -611,10 +650,10 @@ main.container {
 
 .app-sidebar {
   width: 240px;
-  background: #0d1321;
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--border-color);
   flex-shrink: 0;
-  transition: width 0.25s ease, transform 0.25s ease;
+  transition: width 0.25s ease, transform 0.25s ease, background 0.2s ease, border-color 0.2s ease;
   z-index: 40;
 }
 
@@ -883,6 +922,116 @@ main.container {
 
 .checklist-rule.invalid {
   color: var(--text-dim);
+}
+
+/* --------------------------------------------------------------------------
+ * Theme Switcher & Light Mode Polish
+ * -------------------------------------------------------------------------- */
+.theme-toggle-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-hover);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  transform: rotate(15deg);
+}
+
+[data-theme="light"] {
+  --table-header-bg: #f1f5f9;
+}
+
+[data-theme="light"] body {
+  background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(14, 165, 233, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(99, 102, 241, 0.05) 0%, transparent 40%);
+}
+
+[data-theme="light"] .panel,
+[data-theme="light"] .stat-card {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .data-table th {
+  background: #f1f5f9;
+  color: #334155;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] .data-table td {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+[data-theme="light"] .data-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+[data-theme="light"] .code-badge {
+  background: #f1f5f9;
+  color: #0369a1;
+  border: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] .sidebar-telemetry {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+[data-theme="light"] .notice-banner {
+  background: linear-gradient(90deg, #ede9fe, #fae8ff);
+  border-bottom: 1px solid #d8b4fe;
+  color: #581c87;
+}
+
+[data-theme="light"] .modal-content {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .drop-zone {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .theme-toggle-btn {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+[data-theme="light"] .theme-toggle-btn:hover {
+  background: #e2e8f0;
+  color: #0284c7;
+}
+
+[data-theme="light"] .btn-secondary {
+  background: #f1f5f9;
+  color: #1e293b;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .btn-secondary:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+[data-theme="light"] .password-checklist {
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 
 

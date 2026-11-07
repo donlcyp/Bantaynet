@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}BantayNet - Suspicious Activity Detection{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    (function() {
+      const savedTheme = localStorage.getItem('bantaynet_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    })();
+  </script>
 </head>
 <body data-logged-in="{{ 'true' if current_user else 'false' }}" data-inactivity-timeout="{{ (session_inactivity_minutes | default(15)) * 60 * 1000 }}" data-logout-url="{{ url_for('logout') if current_user else '' }}">
   <!-- Header -->
@@ -62,8 +68,25 @@
         </a>
       </div>
 
-      <!-- Top bar right: ONLY Role and Sign Out -->
+      <!-- Top bar right: Theme Toggle, Role, and Sign Out -->
       <div class="nav-links">
+        <button type="button" id="themeToggleBtn" class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle Light / Dark Mode" aria-label="Toggle theme">
+          <svg id="themeMoonIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: block;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg id="themeSunIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+
         {% if current_user %}
         <div style="display: flex; align-items: center; gap: 0.75rem;">
           <div style="font-size: 0.85rem; text-align: right; line-height: 1.2;">
@@ -355,7 +378,35 @@
       }
     }
 
+    // Theme toggle (Light / Dark mode)
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('bantaynet_theme', next);
+      updateThemeIcons(next);
+      if (window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: next } }));
+      }
+    }
+
+    function updateThemeIcons(theme) {
+      const moon = document.getElementById('themeMoonIcon');
+      const sun = document.getElementById('themeSunIcon');
+      if (!moon || !sun) return;
+      if (theme === 'light') {
+        moon.style.display = 'none';
+        sun.style.display = 'block';
+      } else {
+        moon.style.display = 'block';
+        sun.style.display = 'none';
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
+      // Sync theme icon on load
+      updateThemeIcons(localStorage.getItem('bantaynet_theme') || 'dark');
+
       const pref = localStorage.getItem('bantaynet_sidebar_collapsed');
       const sb = document.getElementById('appSidebar');
       if (pref === 'true' && sb && window.innerWidth > 900) {
