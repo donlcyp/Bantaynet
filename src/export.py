@@ -14,7 +14,7 @@ COLUMNS = [
     ("dst_ip", "Destination IP"), ("dst_port", "Target Port"), ("protocol", "Protocol"),
     ("description", "Description"), ("analyst_note", "Analyst Note"),
     ("source_pcap", "Source PCAP"), ("packet_count", "Packet Count"),
-    ("evidence_file", "Evidence File"),
+    ("evidence_file", "Evidence File"), ("evidence_sha256", "Evidence SHA-256"),
 ]
 
 
@@ -34,6 +34,8 @@ def write_alerts_csv(fh: TextIO, rows: Iterable[dict[str, Any]]) -> int:
         r = dict(row)
         if "mitre_tag" not in r:
             attach_mitre_info(r)
+        if not r.get("evidence_sha256") and isinstance(r.get("details"), dict):
+            r["evidence_sha256"] = r.get("details", {}).get("evidence_sha256", "")
         writer.writerow(
             [
                 _sanitize_csv_cell(r.get(key, "")) if r.get(key) is not None else ""

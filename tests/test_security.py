@@ -174,3 +174,80 @@ def test_login_input_error_checking(test_app_client):
     assert res_oversized.status_code == 400
     assert b"exceeds allowed credential limits" in res_oversized.data
 
+
+def test_session_inactivity_timeout():
+    """Verify session inactivity middleware automatically expires idle sessions and redirects to login."""
+    import time
+    from dashboard.app import app
+
+    app.config["TESTING"] = True
+    app.config["FORCE_AUTH_TESTING"] = True
+
+    with app.test_client() as client:
+        # 1. Login successfully
+        res = client.post("/login", data={"username": "analyst", "password": "analyst123!"}, follow_redirects=True)
+        assert res.status_code == 200
+
+        # 2. Simulate elapsed idle time beyond 15-minute threshold (901 seconds ago)
+        with client.session_transaction() as sess:
+            sess["last_activity"] = time.time() - 950
+
+        # 3. Next request should trigger auto-logout and redirect
+        resp_after_idle = client.get("/", follow_redirects=True)
+        assert b"Session expired due to inactivity" in resp_after_idle.data
+        assert b"Sign In" in resp_after_idle.data
+
+
+def test_sha256_evidence_hashing_and_chain_of_custody(tmp_path):
+    """Verify SHA-256 calculation on evidence files and chain-of-custody metadata preservation."""
+    import hashlib
+    from src.alerts import Alert
+    from src.evidence import calculate_sha256
+    from src.db import _format_alert_dict
+    from src.report_pdf import generate_alert_pdf
+
+    # 1. Test raw SHA-256 calculation
+    sample_file = tmp_path / "sample.bin"
+    sample_data = b"BantayNet Digital Forensic Evidence Preservation"
+    sample_file.write_bytes(sample_data)
+
+    expected_sha = hashlib.sha256(sample_data).hexdigest()
+    assert calculate_sha256(sample_file) == expected_sha
+    assert calculate_sha256(tmp_path / "non_existent.bin") == ""
+
+    # 2. Test Alert data model serialization with SHA-256
+    alert = Alert(
+        rule="port_scan",
+        severity="high",
+        src="192.168.1.50",
+        dst="192.168.1.1",
+        first_ts=1700000000.0,
+        last_ts=1700000010.0,
+        packet_count=200,
+        summary="Port scan detected",
+        details={"evidence_sha256": expected_sha, "source_pcap_sha256": "abcdef123456"},
+        evidence_sha256=expected_sha,
+    )
+    alert_dict = alert.to_dict()
+    assert alert_dict["evidence_sha256"] == expected_sha
+    assert alert_dict["details"]["evidence_sha256"] == expected_sha
+
+    # 3. Test database row enrichment
+    enriched = _format_alert_dict({
+        "id": 42,
+        "rule": "port_scan",
+        "severity": "high",
+        "src_ip": "192.168.1.50",
+        "dst_ip": "192.168.1.1",
+        "details_json": '{"evidence_sha256": "' + expected_sha + '", "source_pcap_sha256": "abcdef123456"}',
+    })
+    assert enriched["evidence_sha256"] == expected_sha
+    assert enriched["source_pcap_sha256"] == "abcdef123456"
+
+    # 4. Test PDF generation with forensic hashes
+    pdf_bytes = generate_alert_pdf(enriched, [])
+    assert pdf_bytes is not None
+    assert len(pdf_bytes) > 1000
+
+
+

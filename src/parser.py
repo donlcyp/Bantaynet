@@ -25,8 +25,12 @@ from scapy.utils import PcapReader
 FIN, SYN, RST, PSH, ACK, URG = 0x01, 0x02, 0x04, 0x08, 0x10, 0x20
 
 
+# Security bounds: Maximum packet parsing cap per single upload to prevent CPU/DoS exhaustion
+MAX_PARSEABLE_PACKETS = 1_000_000
+
+
 class PcapError(Exception):
-    """Raised when a capture file is missing or unreadable."""
+    """Raised when a capture file is missing, unreadable, or exceeds safety boundaries."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +117,8 @@ def iter_packets(path: str | Path, stats: ParseStats | None = None) -> Iterator[
 
     with reader:
         for index, pkt in enumerate(reader):
+            if index >= MAX_PARSEABLE_PACKETS:
+                raise PcapError(f"Security limit reached: capture exceeds {MAX_PARSEABLE_PACKETS:,} packet safety cap.")
             stats.total += 1
             rec = _to_record(index, pkt)
             if rec is None:

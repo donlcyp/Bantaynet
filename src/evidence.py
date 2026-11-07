@@ -8,6 +8,7 @@ file per alert.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -18,6 +19,18 @@ from src.alerts import Alert
 # Keep the number of simultaneously open output files well under OS limits.
 MAX_OPEN_WRITERS = 200
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def calculate_sha256(path: Path | str) -> str:
+    """Compute SHA-256 hex digest of a file in 64KB chunks."""
+    p = Path(path)
+    if not p.is_file():
+        return ""
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _store_path(path: Path) -> str:
@@ -63,3 +76,9 @@ def write_evidence(pcap_path: str | Path, alerts: list[Alert], out_dir: str | Pa
 
         for path, (_, alert) in zip(paths, batch):
             alert.evidence_path = _store_path(path)
+            if path.is_file():
+                sha = calculate_sha256(path)
+                if alert.details is None:
+                    alert.details = {}
+                alert.details["evidence_sha256"] = sha
+                alert.evidence_sha256 = sha

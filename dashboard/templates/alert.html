@@ -184,6 +184,7 @@
 
       {% if alert.details %}
         {% for k, v in alert.details.items() %}
+          {% if k not in ['evidence_sha256', 'source_pcap_sha256'] %}
           <dt>{{ k|replace('_', ' ')|title }}</dt>
           <dd>
             {% if v is sequence and v is not string %}
@@ -194,6 +195,7 @@
               <code>{{ v }}</code>
             {% endif %}
           </dd>
+          {% endif %}
         {% endfor %}
       {% endif %}
 
@@ -201,6 +203,29 @@
       <dd style="font-size: 0.85rem; word-break: break-all; color: var(--text-dim);">
         {{ alert.evidence_file or 'No evidence snippet saved' }}
       </dd>
+
+      <dt>Evidence Forensic SHA-256</dt>
+      <dd>
+        {% if evidence_hash %}
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <code style="font-size: 0.8rem; word-break: break-all; background: rgba(0,0,0,0.25); padding: 0.25rem 0.5rem; border-radius: 4px;">{{ evidence_hash }}</code>
+            {% if evidence_status == 'verified' %}
+              <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px;">✓ Cryptographically Intact</span>
+            {% elif evidence_status == 'tampered' %}
+              <span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px;">⚠️ Hash Mismatch (Tampered)</span>
+            {% endif %}
+          </div>
+        {% else %}
+          <span style="color: var(--text-dim); font-size: 0.85rem;">No evidence snippet hash available</span>
+        {% endif %}
+      </dd>
+
+      {% if alert.source_pcap_sha256 or (alert.details and alert.details.source_pcap_sha256) %}
+      <dt>Master Capture SHA-256</dt>
+      <dd>
+        <code style="font-size: 0.8rem; word-break: break-all; background: rgba(0,0,0,0.25); padding: 0.25rem 0.5rem; border-radius: 4px;">{{ alert.source_pcap_sha256 or alert.details.source_pcap_sha256 }}</code>
+      </dd>
+      {% endif %}
     </dl>
   </div>
 </div>

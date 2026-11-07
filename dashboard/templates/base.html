@@ -313,6 +313,64 @@
       if (pref === 'true' && sb && window.innerWidth > 900) {
         sb.classList.add('collapsed');
       }
+
+      {% if current_user %}
+      // Automated Idle Inactivity Warning & Auto-Logout (15-Minute Policy)
+      const TIMEOUT_MS = {{ (session_inactivity_minutes | default(15)) * 60 * 1000 }};
+      const WARNING_MS = 60 * 1000; // Warn 60s before auto-logout
+      let lastActivityTime = Date.now();
+      let warningTimer = null;
+      let logoutTimer = null;
+
+      function resetIdleTimers() {
+        lastActivityTime = Date.now();
+        if (warningTimer) clearTimeout(warningTimer);
+        if (logoutTimer) clearTimeout(logoutTimer);
+
+        const banner = document.getElementById('idleWarningBanner');
+        if (banner) banner.style.display = 'none';
+
+        warningTimer = setTimeout(showIdleWarning, TIMEOUT_MS - WARNING_MS);
+        logoutTimer = setTimeout(performAutoLogout, TIMEOUT_MS);
+      }
+
+      function showIdleWarning() {
+        let banner = document.getElementById('idleWarningBanner');
+        if (!banner) {
+          banner = document.createElement('div');
+          banner.id = 'idleWarningBanner';
+          banner.style.position = 'fixed';
+          banner.style.bottom = '20px';
+          banner.style.right = '20px';
+          banner.style.zIndex = '9999';
+          banner.style.padding = '1rem 1.25rem';
+          banner.style.background = 'rgba(239, 68, 68, 0.95)';
+          banner.style.color = '#ffffff';
+          banner.style.borderRadius = '8px';
+          banner.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+          banner.style.fontSize = '0.85rem';
+          banner.style.display = 'flex';
+          banner.style.alignItems = 'center';
+          banner.style.gap = '0.75rem';
+          banner.innerHTML = `
+            <span>⚠️ <strong>Security Notice:</strong> Inactivity detected. Auto-logout in 60s.</span>
+            <button class="btn btn-secondary" onclick="resetIdleTimers()" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; background: #ffffff; color: #000000; border: none;">Stay Signed In</button>
+          `;
+          document.body.appendChild(banner);
+        }
+        banner.style.display = 'flex';
+      }
+
+      function performAutoLogout() {
+        window.location.href = "{{ url_for('logout') }}";
+      }
+
+      ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
+        window.addEventListener(evt, resetIdleTimers, { passive: true });
+      });
+
+      resetIdleTimers();
+      {% endif %}
     });
   </script>
 </body>

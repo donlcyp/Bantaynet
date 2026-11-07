@@ -46,6 +46,7 @@ except ImportError:
 
 from src.analyze import analyze
 from src.config import ConfigError, DEFAULT_RULES_PATH, load_config, save_rules_config
+from src.evidence import calculate_sha256
 from src.db import (
     authenticate_user,
     clear_alerts,
@@ -106,6 +107,10 @@ UPLOAD_DIR = PROJECT_ROOT / "pcaps" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# Inactivity auto-logout timeout window (default: 15 minutes, configurable via BANTAYNET_INACTIVITY_MINUTES)
+INACTIVITY_TIMEOUT_SECONDS = int(os.environ.get("BANTAYNET_INACTIVITY_MINUTES", 15)) * 60
+
+
 def generate_csrf_token() -> str:
     """Generate or retrieve a cryptographically secure CSRF token for the session."""
     if "csrf_token" not in session:
@@ -128,8 +133,21 @@ def security_and_auth_middleware():
                 )
                 abort(403, description="CSRF security validation failed: missing or invalid security token.")
 
-    # 2. User Authentication Load
+    # 2. Inactivity Session Timeout Enforcement
     user_id = session.get("user_id")
+    if user_id is not None and not (app.config.get("TESTING") and not app.config.get("FORCE_AUTH_TESTING")):
+        last_activity = session.get("last_activity")
+        now_ts = time.time()
+        if last_activity and (now_ts - last_activity > INACTIVITY_TIMEOUT_SECONDS):
+            expired_user = get_user_by_id(user_id)
+            uname = expired_user.get("username", "operator") if expired_user else "operator"
+            session.clear()
+            log_audit_event(uname, "session_timeout", "Web Portal", f"Auto-logged out after {INACTIVITY_TIMEOUT_SECONDS // 60}m inactivity")
+            flash("Session expired due to inactivity. For security, please sign in again.", "error")
+            return redirect(url_for("login", next=request.url))
+        session["last_activity"] = now_ts
+
+    # 3. User Authentication Load
     if user_id is not None:
         g.current_user = get_user_by_id(user_id)
     elif app.config.get("TESTING") and not app.config.get("FORCE_AUTH_TESTING"):
@@ -178,6 +196,7 @@ def inject_global_data():
         "current_user": getattr(g, "current_user", None),
         "csrf_token": generate_csrf_token,
         "is_default_admin_pw": is_default_admin_password_active(),
+        "session_inactivity_minutes": INACTIVITY_TIMEOUT_SECONDS // 60,
     }
 
 
@@ -316,6 +335,7 @@ def login():
             clear_login_failures(client_ip, username)
             session.clear()
             session["user_id"] = user["id"]
+            session["last_activity"] = time.time()
             # Ensure fresh CSRF token upon privilege change
             session["csrf_token"] = secrets.token_hex(32)
 
@@ -492,7 +512,21 @@ def alert_detail(alert_id: int):
 
     evidence_packets = []
     evidence_path = _resolve_evidence(alert.get("evidence_file"))
+    evidence_hash = None
+    evidence_status = "none"
+
     if evidence_path and evidence_path.is_file():
+        live_sha = calculate_sha256(evidence_path)
+        evidence_hash = live_sha
+        stored_sha = alert.get("evidence_sha256") or alert.get("details", {}).get("evidence_sha256")
+        if stored_sha:
+            if stored_sha.lower() == live_sha.lower():
+                evidence_status = "verified"
+            else:
+                evidence_status = "tampered"
+        else:
+            evidence_status = "verified"
+
         try:
             from scapy.layers.inet import ICMP, IP, TCP, UDP
             from scapy.utils import PcapReader
@@ -535,7 +569,13 @@ def alert_detail(alert_id: int):
         except Exception as e:
             app.logger.warning(f"Could not parse evidence PCAP {evidence_path}: {e}")
 
-    return render_template("alert.html", alert=alert, evidence_packets=evidence_packets)
+    return render_template(
+        "alert.html",
+        alert=alert,
+        evidence_packets=evidence_packets,
+        evidence_hash=evidence_hash,
+        evidence_status=evidence_status,
+    )
 
 
 @app.route("/alert/<int:alert_id>/status", methods=["POST"])
@@ -592,6 +632,14 @@ def upload_pcap():
     dest_path = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{filename}"  # never overwrite earlier uploads
     file.save(str(dest_path))
 
+    # Guard: verify non-empty file to prevent downstream zero-byte crashes
+    if dest_path.stat().st_size == 0:
+        dest_path.unlink(missing_ok=True)
+        flash("Upload rejected: file is empty (0 bytes).", "error")
+        return redirect(url_for("index"))
+
+    pcap_sha256 = calculate_sha256(dest_path)
+
     try:
         cfg = load_config()
         result = analyze(dest_path, cfg=cfg)
@@ -603,7 +651,7 @@ def upload_pcap():
             operator,
             "upload_pcap",
             filename,
-            f"Client: {client_name}, {result.stats.parsed} pkts, {len(result.alerts)} alert(s) detected",
+            f"SHA-256: {pcap_sha256[:16]}... | Client: {client_name}, {result.stats.parsed} pkts, {len(result.alerts)} alert(s) detected",
         )
 
         msg = f"Successfully analyzed '{filename}' ({client_name}): {result.stats.parsed} packets parsed, {len(result.alerts)} alert(s) detected."
@@ -626,6 +674,14 @@ def download_evidence(alert_id: int):
     file_path = _resolve_evidence(alert["evidence_file"])
     if file_path is None or not file_path.is_file():
         abort(404, description="Evidence file does not exist on disk")
+
+    operator = g.current_user.get("username", "analyst") if getattr(g, "current_user", None) else "analyst"
+    log_audit_event(
+        operator,
+        "download_evidence",
+        f"Alert #{alert_id} ({file_path.name})",
+        "Evidence PCAP downloaded for offline forensic analysis.",
+    )
 
     return send_file(
         str(file_path),
@@ -674,6 +730,7 @@ def alert_report_pdf(alert_id: int):
     evidence_packets = []
     evidence_path = _resolve_evidence(alert.get("evidence_file"))
     if evidence_path and evidence_path.is_file():
+        alert["evidence_sha256"] = alert.get("evidence_sha256") or calculate_sha256(evidence_path)
         try:
             from scapy.layers.inet import ICMP, IP, TCP, UDP
             from scapy.utils import PcapReader
@@ -908,12 +965,16 @@ def admin_clear_database():
     removed_files = 0
     if purge_evidence:
         cfg = load_config(DEFAULT_RULES_PATH)
-        evidence_dir = PROJECT_ROOT / cfg.evidence.output_dir
+        evidence_dir = (Path(PROJECT_ROOT) / cfg.evidence.output_dir).resolve()
+        if not evidence_dir.is_dir():
+            evidence_dir = Path("evidence").resolve()
+        if not evidence_dir.is_dir():
+            evidence_dir = Path("evidence").resolve()
         if evidence_dir.is_dir():
-            for f in evidence_dir.iterdir():
+            for f in list(evidence_dir.iterdir()):
                 if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS:
                     try:
-                        f.unlink()
+                        f.unlink(missing_ok=True)
                         removed_files += 1
                     except OSError:
                         pass

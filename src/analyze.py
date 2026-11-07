@@ -17,7 +17,7 @@ from pathlib import Path
 from src.alerts import Alert
 from src.config import Config, ConfigError, load_config
 from src.detector import Detector
-from src.evidence import write_evidence
+from src.evidence import calculate_sha256, write_evidence
 from src.parser import ParseStats, PcapError, iter_packets
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -53,6 +53,13 @@ def analyze(
     alerts.extend(detector.finish())
     stats.skipped_allowlist = detector.skipped_allowlist
     alerts.sort(key=lambda a: (a.first_ts, a.rule, a.src, a.dst))
+
+    pcap_sha = calculate_sha256(pcap) if pcap.is_file() else ""
+    if pcap_sha:
+        for a in alerts:
+            if a.details is None:
+                a.details = {}
+            a.details["source_pcap_sha256"] = pcap_sha
 
     if cfg.evidence.enabled and alerts:
         out = Path(evidence_dir) if evidence_dir is not None else Path(cfg.evidence.output_dir)

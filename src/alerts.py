@@ -22,6 +22,7 @@ class Alert:
     evidence_path: str | None = None
     protocol: str = "TCP"     # "TCP" | "UDP" | "ICMP" (set by the rule, never guessed from text)
     dst_port: str | None = None   # display label, e.g. "80" or "Multiple (200 ports)"
+    evidence_sha256: str | None = None
 
     @property
     def duration(self) -> float:

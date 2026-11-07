@@ -170,19 +170,23 @@
           </td>
           <td style="font-size: 0.82rem; color: var(--text-muted);">{{ u.created_at[:19] if u.created_at else '-' }}</td>
           <td>
-            <form method="POST" action="{{ url_for('change_user_role', user_id=u.id) }}" style="display: flex; gap: 0.4rem; align-items: center;">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <label for="role-select-{{ u.id }}" class="visually-hidden">Role for {{ u.username }}</label>
-              <select id="role-select-{{ u.id }}" name="role" class="form-control" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; height: 30px;" aria-label="Role for {{ u.username }}">
-                <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
-                <option value="analyst" {% if u.role == 'analyst' %}selected{% endif %}>Analyst</option>
-                <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
-              </select>
-              <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; height: 30px;">Update</button>
-            </form>
+            {% if u.is_virtual %}
+              <span class="badge" style="background: rgba(148, 163, 184, 0.15); border-color: #64748b; color: #94a3b8; font-size: 0.72rem;">Virtual Test Account</span>
+            {% else %}
+              <form method="POST" action="{{ url_for('change_user_role', user_id=u.id) }}" style="display: flex; gap: 0.4rem; align-items: center;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label for="role-select-{{ u.id }}" class="visually-hidden">Role for {{ u.username }}</label>
+                <select id="role-select-{{ u.id }}" name="role" class="form-control" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; height: 30px;" aria-label="Role for {{ u.username }}">
+                  <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                  <option value="analyst" {% if u.role == 'analyst' %}selected{% endif %}>Analyst</option>
+                  <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+                </select>
+                <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; height: 30px;">Update</button>
+              </form>
+            {% endif %}
           </td>
           <td>
-            {% if current_user and current_user.id == u.id %}
+            {% if u.is_virtual or (current_user and current_user.id == u.id) %}
               <span style="font-size: 0.75rem; color: var(--text-dim);">-</span>
             {% else %}
               <form method="POST" action="{{ url_for('remove_user', user_id=u.id) }}" onsubmit="return confirm('Delete operator account \'{{ u.username }}\'?');">

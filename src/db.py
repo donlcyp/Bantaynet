@@ -403,6 +403,41 @@ def init_db(db_path: Path | str | None = None) -> str:
 VALID_ROLES = ("admin", "analyst", "viewer")
 
 
+def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
+    """In-memory test accounts available for testing without touching the database."""
+    import os
+    admin_pwd = os.environ.get("BANTAYNET_ADMIN_PASSWORD") or "admin123!"
+    analyst_pwd = os.environ.get("BANTAYNET_ANALYST_PASSWORD") or "analyst123!"
+    viewer_pwd = os.environ.get("BANTAYNET_VIEWER_PASSWORD") or "viewer123!"
+
+    return {
+        "admin": {
+            "id": -1,
+            "username": "admin",
+            "password": admin_pwd,
+            "role": "admin",
+            "created_at": "2026-01-01T00:00:00Z",
+            "is_virtual": True,
+        },
+        "analyst": {
+            "id": -2,
+            "username": "analyst",
+            "password": analyst_pwd,
+            "role": "analyst",
+            "created_at": "2026-01-01T00:00:00Z",
+            "is_virtual": True,
+        },
+        "viewer": {
+            "id": -3,
+            "username": "viewer",
+            "password": viewer_pwd,
+            "role": "viewer",
+            "created_at": "2026-01-01T00:00:00Z",
+            "is_virtual": True,
+        },
+    }
+
+
 def is_default_admin_password_active(db_path: Path | str | None = None) -> bool:
     """Return True if the 'admin' account still uses the known default password 'admin123!'."""
     try:
@@ -413,50 +448,8 @@ def is_default_admin_password_active(db_path: Path | str | None = None) -> bool:
 
 
 def _seed_default_users(engine: str, conf: dict[str, Any]) -> None:
-    """Ensure default accounts (admin, analyst, viewer) exist if users table is empty."""
-    import os
-
-    admin_pwd = os.environ.get("BANTAYNET_ADMIN_PASSWORD") or "admin123!"
-    analyst_pwd = os.environ.get("BANTAYNET_ANALYST_PASSWORD") or "analyst123!"
-    viewer_pwd = os.environ.get("BANTAYNET_VIEWER_PASSWORD") or "viewer123!"
-
-    default_accounts = [
-        ("admin", admin_pwd, "admin"),
-        ("analyst", analyst_pwd, "analyst"),
-        ("viewer", viewer_pwd, "viewer"),
-    ]
-    now_str = datetime.now(timezone.utc).isoformat()
-
-    if engine == "mysql":
-        try:
-            conn = get_mysql_connection(conf)
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) as cnt FROM users")
-                cnt = cur.fetchone()["cnt"]
-                if cnt == 0:
-                    for u, p, r in default_accounts:
-                        cur.execute(
-                            "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s)",
-                            (u, generate_password_hash(p), r, now_str),
-                        )
-            conn.close()
-            return
-        except Exception:
-            pass
-
-    # SQLite
-    try:
-        with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-            cnt = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-            if cnt == 0:
-                for u, p, r in default_accounts:
-                    conn.execute(
-                        "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                        (u, generate_password_hash(p), r, now_str),
-                    )
-                conn.commit()
-    except Exception:
-        pass
+    """Default accounts are no longer saved to external databases (handled in-memory / purely in DB for new accounts)."""
+    return
 
 
 def create_user(
@@ -521,6 +514,7 @@ def authenticate_user(
     if not username or not password:
         return None
 
+    # 1. First check if real database contains this account
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
@@ -541,20 +535,36 @@ def authenticate_user(
             if row:
                 user_row = dict(row)
 
-    if not user_row:
+    if user_row:
+        stored_hash = user_row.get("password_hash") or ""
+        if check_password_hash(stored_hash, password):
+            user = dict(user_row)
+            user.pop("password_hash", None)
+            return user
         return None
 
-    stored_hash = user_row.get("password_hash") or ""
-    if not check_password_hash(stored_hash, password):
-        return None
+    # 2. In-memory virtual test account check (never stored in database)
+    static_users = _get_static_test_accounts()
+    if username in static_users:
+        target = static_users[username]
+        # Match against either plaintext env password or hashed equivalent
+        if password == target["password"] or check_password_hash(generate_password_hash(target["password"]), password):
+            u_copy = dict(target)
+            u_copy.pop("password", None)
+            return u_copy
 
-    user = dict(user_row)
-    user.pop("password_hash", None)
-    return user
+    return None
 
 
 def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str, Any] | None:
     """Retrieve user by ID without password_hash."""
+    # Check in-memory virtual test accounts
+    for target in _get_static_test_accounts().values():
+        if target["id"] == user_id:
+            u_copy = dict(target)
+            u_copy.pop("password", None)
+            return u_copy
+
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
@@ -575,28 +585,42 @@ def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str,
 
 
 def get_all_users(db_path: Path | str | None = None) -> list[dict[str, Any]]:
-    """Retrieve all users without password_hash ordered by ID."""
+    """Retrieve all users without password_hash ordered by ID. Database users take precedence; virtual accounts are included for display if not in DB."""
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
+    db_rows: list[dict[str, Any]] = []
     if engine == "mysql":
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
                 cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id ASC")
-                rows = cur.fetchall()
+                db_rows = [dict(r) for r in cur.fetchall()]
             conn.close()
-            return [dict(r) for r in rows]
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
-    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        rows = conn.execute("SELECT id, username, role, created_at FROM users ORDER BY id ASC").fetchall()
-        return [dict(r) for r in rows]
+    if not db_rows and (engine == "sqlite" or ACTIVE_ENGINE == "sqlite"):
+        with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+            db_rows = [dict(r) for r in conn.execute("SELECT id, username, role, created_at FROM users ORDER BY id ASC").fetchall()]
+
+    existing_usernames = {r["username"] for r in db_rows}
+    # Append virtual test accounts only if not already registered in DB
+    result = list(db_rows)
+    for v in _get_static_test_accounts().values():
+        if v["username"] not in existing_usernames:
+            v_copy = dict(v)
+            v_copy.pop("password", None)
+            result.append(v_copy)
+
+    return result
 
 
 def update_user_role(user_id: int, role: str, db_path: Path | str | None = None) -> bool:
     """Update role for a user."""
+    if user_id in (-1, -2, -3):
+        return True
+
     role = (role or "").strip().lower()
     if role not in VALID_ROLES:
         raise ValueError(f"Invalid role '{role}'. Must be one of {VALID_ROLES}")
@@ -622,6 +646,9 @@ def update_user_role(user_id: int, role: str, db_path: Path | str | None = None)
 
 def delete_user(user_id: int, db_path: Path | str | None = None) -> bool:
     """Delete a user by ID."""
+    if user_id in (-1, -2, -3):
+        raise ValueError("Virtual test account cannot be deleted from database")
+
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
@@ -888,6 +915,8 @@ def _format_alert_dict(row: Any) -> dict[str, Any]:
     d["status"] = d.get("status") or "new"
     d["client_name"] = d.get("client_name") or "Default"
     d["analyst_note"] = d.get("analyst_note") or ""
+    d["evidence_sha256"] = d.get("evidence_sha256") or d["details"].get("evidence_sha256")
+    d["source_pcap_sha256"] = d.get("source_pcap_sha256") or d["details"].get("source_pcap_sha256")
     attach_mitre_info(d)
     return d
 
