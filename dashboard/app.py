@@ -746,7 +746,6 @@ def index():
     else:
         rule = severity = src_ip = status = client_name = search = None
 
-    init_db()
     stats = get_summary_stats()
     chart_data = get_chart_data()
     alerts = get_alerts(

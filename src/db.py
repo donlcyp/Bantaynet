@@ -13,6 +13,8 @@ import logging
 import os
 import re
 import sqlite3
+import threading
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -196,9 +198,22 @@ def get_sqlite_connection(db_path: Path | str | None = None) -> sqlite3.Connecti
     return conn
 
 
-def init_db(db_path: Path | str | None = None) -> str:
-    """Initialize alerts table on the active database engine."""
+_INITIALIZED_TARGETS: set[str] = set()
+
+
+def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
+    """Initialize alerts table on the active database engine (cached once per target/process)."""
+    global _INITIALIZED_TARGETS
     engine, conf = _get_active_engine(db_path)
+    target_key = (
+        str(Path(db_path).resolve())
+        if db_path is not None
+        else str(conf.get("dsn") or conf.get("path") or engine)
+    )
+
+    if not force and target_key in _INITIALIZED_TARGETS:
+        return "postgres" if (engine == "mysql" and conf.get("is_postgres")) else engine
+
     if engine == "mysql" and conf.get("is_postgres"):
         try:
             conn = get_mysql_connection(conf)
@@ -280,6 +295,7 @@ def init_db(db_path: Path | str | None = None) -> str:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);")
             conn.close()
             _seed_default_users("mysql", conf)
+            _INITIALIZED_TARGETS.add(target_key)
             return "postgres"
         except Exception as exc:
             _mark_sqlite_fallback(exc)
@@ -367,6 +383,7 @@ def init_db(db_path: Path | str | None = None) -> str:
                 )
             conn.close()
             _seed_default_users("mysql", conf)
+            _INITIALIZED_TARGETS.add(target_key)
             return "mysql"
         except Exception as exc:
             _mark_sqlite_fallback(exc)
@@ -460,6 +477,7 @@ def init_db(db_path: Path | str | None = None) -> str:
         conn.commit()
 
     _seed_default_users("sqlite", conf)
+    _INITIALIZED_TARGETS.add(target_key)
     return "sqlite"
 
 
@@ -513,11 +531,24 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
     }
 
 
+_DEFAULT_ADMIN_PW_CACHE: tuple[float, bool] | None = None
+
+
 def is_default_admin_password_active(db_path: Path | str | None = None) -> bool:
-    """Return True if the 'admin' account still uses the known default password 'admin123!'."""
+    """Return True if the 'admin' account still uses the known default password 'admin123!' (cached 60s)."""
+    global _DEFAULT_ADMIN_PW_CACHE
+    now = time.time()
+    if db_path is None and _DEFAULT_ADMIN_PW_CACHE is not None:
+        last_t, cached_val = _DEFAULT_ADMIN_PW_CACHE
+        if now - last_t < 60:
+            return cached_val
+
     try:
         user = authenticate_user("admin", "admin123!", db_path=db_path)
-        return user is not None
+        val = user is not None
+        if db_path is None:
+            _DEFAULT_ADMIN_PW_CACHE = (now, val)
+        return val
     except Exception:
         return False
 
