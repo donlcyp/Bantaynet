@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
 from collections import Counter
@@ -20,6 +21,16 @@ from typing import Any
 from src.mitre import attach_mitre_info
 from src.security import EMAIL_REGEX
 from werkzeug.security import check_password_hash, generate_password_hash
+
+# Automatically load environment variables from .env if present
+try:
+    from dotenv import load_dotenv
+
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(_env_path)
+except ImportError:
+    pass
 
 logger = logging.getLogger("bantaynet.db")
 
@@ -1587,3 +1598,72 @@ def migrate_sqlite_to_mysql(sqlite_path: Path | str | None = None) -> int:
             count += 1
     mysql_conn.close()
     return count
+
+
+def check_db_connection() -> dict[str, Any]:
+    """Inspect and test the active database connection, returning diagnostic status."""
+    engine, conf = _get_active_engine()
+    is_postgres = conf.get("is_postgres", False)
+
+    label = (
+        "Supabase (PostgreSQL)"
+        if (engine == "mysql" and is_postgres)
+        else ("MySQL (XAMPP)" if engine == "mysql" else "SQLite Fallback")
+    )
+
+    info: dict[str, Any] = {
+        "configured_engine": engine,
+        "is_postgres": is_postgres,
+        "engine_label": label,
+        "connected": False,
+        "active_engine": None,
+        "error": None,
+        "alert_count": 0,
+        "user_count": 0,
+    }
+
+    try:
+        active = init_db()
+        info["connected"] = True
+        info["active_engine"] = active
+        stats = get_summary_stats()
+        info["alert_count"] = stats.get("total", 0)
+        users = get_all_users()
+        info["user_count"] = len(users)
+    except Exception as exc:
+        info["error"] = str(exc)
+
+    return info
+
+
+if __name__ == "__main__":
+    import sys
+
+    print("=" * 60)
+    print(" BantayNet Database Connection Diagnostic")
+    print("=" * 60)
+
+    status = check_db_connection()
+    supabase_configured = bool((os.environ.get("SUPABASE_DB_URL") or os.environ.get("DATABASE_URL") or "").strip())
+
+    print(f"Target Engine:     {status['engine_label']}")
+    print(f"Active Engine:     {status['active_engine'] or 'None'}")
+    print(f"Connection Status: {'Connected (OK)' if status['connected'] else 'Failed'}")
+    print(f"Alerts in DB:      {status['alert_count']}")
+    print(f"Users in DB:       {status['user_count']}")
+
+    if status["is_postgres"] and status["connected"]:
+        print("\n[+] SUCCESS: BantayNet is actively connected to Supabase PostgreSQL!")
+        sys.exit(0)
+    else:
+        print("\n[-] NOTICE: BantayNet is currently NOT connected to Supabase.")
+        if not supabase_configured:
+            print("    Reason: 'SUPABASE_DB_URL' is not set or is commented out in your .env file.")
+            print("    Current Fallback: Operating safely on local " + (status['active_engine'] or 'SQLite') + ".")
+            print("\nTo connect to Supabase:")
+            print("  1. In Supabase Dashboard -> Project Settings -> Database -> Connection string (URI)")
+            print("  2. In your .env file, uncomment and set:")
+            print("     SUPABASE_DB_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres")
+        else:
+            print(f"    Connection Attempt Error: {status.get('error')}")
+        sys.exit(0)
