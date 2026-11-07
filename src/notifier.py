@@ -35,13 +35,42 @@ SEVERITY_RANKS = {"low": 1, "medium": 2, "high": 3}
 
 
 def _get_smtp_credentials() -> dict[str, Any]:
-    """Retrieve SMTP configuration favoring Gmail settings if configured."""
+    """Retrieve SMTP configuration supporting Mailtrap SMTP, Gmail, or custom TLS mail servers."""
+    mailtrap_token = (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
+    smtp_server = (
+        os.environ.get("MAILTRAP_SMTP_SERVER")
+        or os.environ.get("BANTAYNET_SMTP_SERVER")
+        or ""
+    ).strip()
+
+    # Detect Mailtrap SMTP explicitly or via server hostname
+    is_mailtrap = "mailtrap.io" in smtp_server.lower() or (
+        mailtrap_token and os.environ.get("MAILTRAP_USE_SMTP", "").lower() in ("1", "true", "yes")
+    )
+
+    if is_mailtrap:
+        server_host = smtp_server or "live.smtp.mailtrap.io"
+        smtp_port = int(os.environ.get("MAILTRAP_SMTP_PORT") or os.environ.get("BANTAYNET_SMTP_PORT") or "587")
+        smtp_user = (os.environ.get("MAILTRAP_SMTP_USER") or os.environ.get("BANTAYNET_SMTP_USER") or "api").strip()
+        smtp_pass = (os.environ.get("BANTAYNET_SMTP_PASSWORD") or mailtrap_token).strip()
+        sender = (
+            os.environ.get("MAILTRAP_FROM_EMAIL")
+            or os.environ.get("BANTAYNET_SMTP_SENDER")
+            or "Private Person <hello@demomailtrap.co>"
+        ).strip()
+        return {
+            "user": smtp_user,
+            "password": smtp_pass,
+            "server": server_host,
+            "port": smtp_port,
+            "sender": sender,
+            "use_tls": True,
+        }
+
     gmail_user = (os.environ.get("GMAIL_USER") or os.environ.get("BANTAYNET_SMTP_USER") or "").strip()
     gmail_pass = (os.environ.get("GMAIL_APP_PASSWORD") or os.environ.get("BANTAYNET_SMTP_PASSWORD") or "").strip()
-    smtp_server = (
-        os.environ.get("BANTAYNET_SMTP_SERVER")
-        or ("smtp.gmail.com" if (gmail_user or gmail_pass) else "localhost")
-    ).strip()
+    if not smtp_server:
+        smtp_server = "smtp.gmail.com" if (gmail_user or gmail_pass) else "localhost"
     smtp_port = int(os.environ.get("BANTAYNET_SMTP_PORT") or "587")
     sender = gmail_user or os.environ.get("BANTAYNET_SMTP_SENDER") or "alerts@bantaynet.local"
 
@@ -53,6 +82,77 @@ def _get_smtp_credentials() -> dict[str, Any]:
         "sender": sender,
         "use_tls": True,
     }
+
+
+def send_mailtrap_smtp(
+    receiver: str,
+    subject: str,
+    message: str,
+    sender: str = "",
+    html_content: str = "",
+) -> tuple[bool, str]:
+    """Send an email using Mailtrap SMTP (live.smtp.mailtrap.io:587).
+
+    Follows the Mailtrap SMTP pattern:
+    - Host: live.smtp.mailtrap.io (port 587 with STARTTLS)
+    - Username: 'api'
+    - Password: <MAILTRAP_API_TOKEN>
+    - Sender: MAILTRAP_FROM_EMAIL or 'Private Person <hello@demomailtrap.co>'
+    - Logs: View real-time delivery logs at https://mailtrap.io/sending/email_logs
+    """
+    token = (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
+    if not token:
+        return False, "MAILTRAP_API_TOKEN is not configured in environment."
+
+    receiver = (receiver or "").strip()
+    if not receiver:
+        return False, "Receiver email is required."
+
+    sender = (
+        sender
+        or os.environ.get("MAILTRAP_FROM_EMAIL")
+        or os.environ.get("BANTAYNET_SMTP_SENDER")
+        or "Private Person <hello@demomailtrap.co>"
+    ).strip()
+
+    smtp_host = os.environ.get("MAILTRAP_SMTP_SERVER") or "live.smtp.mailtrap.io"
+    smtp_port = int(os.environ.get("MAILTRAP_SMTP_PORT") or "587")
+    smtp_user = os.environ.get("MAILTRAP_SMTP_USER") or "api"
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = sender
+        msg["To"] = receiver
+
+        msg.attach(MIMEText(message, "plain"))
+        if html_content:
+            msg.attach(MIMEText(html_content, "html"))
+
+        server = _connect_smtp(smtp_host, smtp_port, use_tls=True, timeout=10)
+        try:
+            server.login(smtp_user, token)
+            server.sendmail(sender, [receiver], msg.as_string())
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                pass
+
+        logger.info("Email successfully sent via Mailtrap SMTP to %s", receiver)
+        return True, f"Email delivered via Mailtrap SMTP to {receiver}"
+    except smtplib.SMTPDataError as exc:
+        err = f"Mailtrap SMTP data error ({exc.smtp_code}): {exc.smtp_error.decode(errors='ignore') if isinstance(exc.smtp_error, bytes) else exc.smtp_error}"
+        logger.error(err)
+        return False, err
+    except smtplib.SMTPAuthenticationError as exc:
+        err = f"Mailtrap SMTP authentication failed ({exc.smtp_code}). Please verify MAILTRAP_API_TOKEN: {exc}"
+        logger.error(err)
+        return False, err
+    except Exception as exc:
+        err = f"Mailtrap SMTP delivery failed: {exc}"
+        logger.error(err)
+        return False, err
 
 
 def _connect_smtp(server_host: str, port: int, use_tls: bool = True, timeout: int = 10) -> smtplib.SMTP:
