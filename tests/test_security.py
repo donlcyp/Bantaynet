@@ -250,4 +250,21 @@ def test_sha256_evidence_hashing_and_chain_of_custody(tmp_path):
     assert len(pdf_bytes) > 1000
 
 
+def test_custom_error_pages_user_facing(test_app_client):
+    """Verify custom branded user-facing error pages for 404, 403, and invalid endpoints."""
+    # 404 Not Found on nonexistent route
+    res_404 = test_app_client.get("/nonexistent-endpoint-xyz")
+    assert res_404.status_code == 404
+    assert b"404" in res_404.data
+    assert b"Resource Not Found" in res_404.data
+    assert b"Return to Dashboard" in res_404.data
+
+    # Log in as analyst to test protected 404
+    test_app_client.post("/login", data={"username": "analyst", "password": "analyst123!"})
+    res_alert = test_app_client.get("/alert/99999")
+    assert res_alert.status_code == 404
+    assert b"Alert #99999 not found" in res_alert.data
+
+
+
 

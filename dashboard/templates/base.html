@@ -221,9 +221,19 @@
           {% if messages %}
             <div class="flash-container">
               {% for category, message in messages %}
-                <div class="alert-flash alert-flash-{{ 'success' if category == 'success' else 'error' }}">
-                  <span>{{ message }}</span>
-                  <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;cursor:pointer;">&times;</button>
+                {% set cat_class = 'success' if category == 'success' else ('warning' if category == 'warning' else 'error') %}
+                <div class="alert-flash alert-flash-{{ cat_class }}" role="alert">
+                  <div style="display: flex; align-items: center; gap: 0.65rem;">
+                    {% if cat_class == 'success' %}
+                      <span style="font-size: 1.1rem; line-height: 1;">✓</span>
+                    {% elif cat_class == 'warning' %}
+                      <span style="font-size: 1.1rem; line-height: 1;">⚠️</span>
+                    {% else %}
+                      <span style="font-size: 1.1rem; line-height: 1;">❌</span>
+                    {% endif %}
+                    <span>{{ message }}</span>
+                  </div>
+                  <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;cursor:pointer;font-size:1.25rem;line-height:1;opacity:0.8;" aria-label="Close">&times;</button>
                 </div>
               {% endfor %}
             </div>
@@ -261,6 +271,8 @@
           <input type="file" id="fileInput" name="pcap_file" accept=".pcap,.pcapng" style="display:none;" onchange="updateFileName(this)">
         </div>
 
+        <div id="uploadErrorFeedback" style="display: none; margin-top: 0.75rem; padding: 0.65rem 0.85rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; font-size: 0.82rem; color: #fca5a5; line-height: 1.4;"></div>
+
         <div style="margin-top: 1rem; margin-bottom: 1.25rem;">
           <label for="uploadClientName" style="display:block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.35rem; color: var(--text-main);">Client / Site Network</label>
           <input type="text" id="uploadClientName" name="client_name" placeholder="e.g. Client A - Branch 2, Main Lab, HQ Office" maxlength="64" style="width: 100%; padding: 0.55rem 0.75rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.88rem; outline: none;">
@@ -283,10 +295,48 @@
       document.getElementById('uploadModal').classList.remove('active');
     }
     function updateFileName(input) {
-      if (input.files && input.files[0]) {
-        document.getElementById('fileLabel').textContent = input.files[0].name;
-        document.getElementById('analyzeSubmitBtn').disabled = false;
+      const errEl = document.getElementById('uploadErrorFeedback');
+      const submitBtn = document.getElementById('analyzeSubmitBtn');
+      const labelEl = document.getElementById('fileLabel');
+
+      if (!input.files || !input.files[0]) {
+        return;
       }
+
+      const file = input.files[0];
+      const validExts = ['.pcap', '.pcapng'];
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+
+      if (!validExts.includes(ext)) {
+        labelEl.textContent = file.name;
+        errEl.innerHTML = '❌ <strong>Validation Error:</strong> Invalid file type. Only <code>.pcap</code> and <code>.pcapng</code> captures are supported.';
+        errEl.style.display = 'block';
+        submitBtn.disabled = true;
+        return;
+      }
+
+      if (file.size === 0) {
+        labelEl.textContent = file.name;
+        errEl.innerHTML = '❌ <strong>Validation Error:</strong> The selected file is completely empty (0 bytes).';
+        errEl.style.display = 'block';
+        submitBtn.disabled = true;
+        return;
+      }
+
+      if (file.size > MAX_SIZE) {
+        labelEl.textContent = file.name;
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        errEl.innerHTML = `❌ <strong>Size Limit Exceeded:</strong> File size (${sizeMb} MB) exceeds the maximum allowed 50 MB.`;
+        errEl.style.display = 'block';
+        submitBtn.disabled = true;
+        return;
+      }
+
+      // Valid file
+      labelEl.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      if (errEl) errEl.style.display = 'none';
+      submitBtn.disabled = false;
     }
     // Close modal on click outside
     window.onclick = function(event) {

@@ -1054,6 +1054,47 @@ def admin_delete_file():
     return redirect(url_for("manage_storage"))
 
 
+# ---------------------------------------------------------------------------
+# User-Facing Error Output & Status Code Handlers
+# ---------------------------------------------------------------------------
+
+
+@app.errorhandler(400)
+def handle_bad_request(err):
+    desc = getattr(err, "description", "The server could not process the request due to malformed or invalid syntax.")
+    return render_template("error.html", error_code=400, error_title="Bad Request", error_message=desc), 400
+
+
+@app.errorhandler(403)
+def handle_forbidden(err):
+    desc = getattr(err, "description", "Access denied. You do not possess the required permissions to view this resource.")
+    return render_template("error.html", error_code=403, error_title="Access Forbidden", error_message=desc), 403
+
+
+@app.errorhandler(404)
+def handle_not_found(err):
+    desc = getattr(err, "description", "The requested page, alert record, or forensic evidence file could not be found.")
+    return render_template("error.html", error_code=404, error_title="Resource Not Found", error_message=desc), 404
+
+
+@app.errorhandler(413)
+def handle_payload_too_large(err):
+    desc = "The uploaded file exceeds the 50 MB maximum payload limit configured for BantayNet."
+    return render_template("error.html", error_code=413, error_title="Upload Exceeds Limit", error_message=desc), 413
+
+
+@app.errorhandler(429)
+def handle_rate_limited(err):
+    desc = getattr(err, "description", "Too many requests. Temporary security lockout active to prevent brute-force abuse.")
+    return render_template("error.html", error_code=429, error_title="Rate Limit Exceeded", error_message=desc), 429
+
+
+@app.errorhandler(500)
+def handle_internal_server_error(err):
+    desc = "An unexpected server error occurred while processing your request. The incident has been recorded."
+    return render_template("error.html", error_code=500, error_title="Internal Server Error", error_message=desc), 500
+
+
 
 def run_dashboard(host: str = "127.0.0.1", port: int = 5000, debug: bool = False):
     init_db()
