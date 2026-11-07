@@ -93,9 +93,9 @@
       <div style="margin-bottom: 1.5rem;">
         <label for="new_role" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Security Role</label>
         <select id="new_role" name="role" class="form-control" style="width: 100%;">
-          <option value="viewer">Viewer (Read-only alerts & exports)</option>
-          <option value="analyst">Analyst (Upload PCAPs & triage incidents)</option>
-          <option value="admin">Admin (Full administrative privileges)</option>
+          <option value="viewer">Viewer (Dashboard summary &amp; read-only alert details)</option>
+          <option value="analyst">Security Analyst (Upload PCAPs, investigate evidence &amp; export CSV)</option>
+          <option value="admin">IT Administrator (Configure rules, manage DB/evidence &amp; full access)</option>
         </select>
       </div>
 
@@ -108,23 +108,23 @@
     <div class="panel-title">Role Permission Matrix</div>
     <div style="margin-top: 0.75rem; font-size: 0.85rem; line-height: 1.6;">
       <div style="padding: 0.75rem; margin-bottom: 0.6rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px;">
-        <strong style="color: #38bdf8;">Administrator:</strong>
+        <strong style="color: #38bdf8;">IT Administrator (Admin):</strong>
         <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
-          Full access to system operations: upload PCAP captures, triage incidents, add/remove user accounts, and change operator roles.
+          Configure detection thresholds and rules, manage the database and stored evidence files, manage operator accounts/audit logs, and view all alerts, evidence, and reports.
         </p>
       </div>
 
       <div style="padding: 0.75rem; margin-bottom: 0.6rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px;">
-        <strong style="color: #34d399;">Analyst:</strong>
+        <strong style="color: #34d399;">Security Analyst (Analyst):</strong>
         <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
-          Operational triage: upload authorized PCAPs, review forensic packets, update incident status (new, investigating, resolved, false_positive), and record investigation notes.
+          Upload and analyze PCAP files, investigate alerts using the evidence packets and triage notes, and filter alert history and export CSV/PDF reports.
         </p>
       </div>
 
       <div style="padding: 0.75rem; background: rgba(167, 139, 250, 0.08); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 6px;">
-        <strong style="color: #a78bfa;">Viewer:</strong>
+        <strong style="color: #a78bfa;">Viewer (Team Lead / Auditor):</strong>
         <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
-          Read-only audit: inspect alerts, view analytics charts, download evidence PCAPs, and export CSV reports. Upload and triage modifications are disabled.
+          View the dashboard summary, visual analytics charts, and read-only alert details.
         </p>
       </div>
     </div>

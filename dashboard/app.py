@@ -45,10 +45,12 @@ except ImportError:
     pass
 
 from src.analyze import analyze
-from src.config import load_config
+from src.config import ConfigError, DEFAULT_RULES_PATH, load_config, save_rules_config
 from src.db import (
     authenticate_user,
+    clear_alerts,
     create_user,
+    delete_alert,
     delete_user,
     get_alert_by_id,
     get_alerts,
@@ -608,7 +610,7 @@ def upload_pcap():
 
 
 @app.route("/evidence/<int:alert_id>")
-@login_required
+@role_required("admin", "analyst")
 def download_evidence(alert_id: int):
     alert = get_alert_by_id(alert_id)
     if not alert or not alert.get("evidence_file"):
@@ -627,7 +629,7 @@ def download_evidence(alert_id: int):
 
 
 @app.route("/export.csv")
-@login_required
+@role_required("admin", "analyst")
 def export_csv():
     rule = request.args.get("rule", "").strip() or None
     severity = request.args.get("severity", "").strip() or None
@@ -656,7 +658,7 @@ def export_csv():
 
 
 @app.route("/alert/<int:alert_id>/report.pdf")
-@login_required
+@role_required("admin", "analyst")
 def alert_report_pdf(alert_id: int):
     alert = get_alert_by_id(alert_id)
     if not alert:
@@ -720,7 +722,7 @@ def alert_report_pdf(alert_id: int):
 
 
 @app.route("/report/summary.pdf")
-@login_required
+@role_required("admin", "analyst")
 def executive_summary_pdf():
     rule = request.args.get("rule", "").strip() or None
     severity = request.args.get("severity", "").strip() or None
@@ -755,6 +757,228 @@ def executive_summary_pdf():
         as_attachment=True,
         download_name=filename,
     )
+
+
+@app.route("/settings/rules", methods=["GET", "POST"])
+@role_required("admin")
+def manage_rules():
+    """IT Administrator view to configure detection thresholds and rules."""
+    rules_path = DEFAULT_RULES_PATH
+    if request.method == "POST":
+        try:
+            def _float(key: str, default: float) -> float:
+                val = float(request.form.get(key, default))
+                return int(val) if val.is_integer() else val
+
+            def _int(key: str, default: int) -> int:
+                return int(request.form.get(key, default))
+
+            raw_ips = request.form.get("allowlist_ips", "")
+            ips_list = [ip.strip() for ip in re.split(r"[\n,]+", raw_ips) if ip.strip()]
+
+            updates = {
+                "port_scan": {
+                    "enabled": request.form.get("port_scan_enabled") == "on",
+                    "severity": request.form.get("port_scan_severity", "high").strip().lower(),
+                    "window_seconds": _float("port_scan_window", 5.0),
+                    "distinct_ports": _int("port_scan_ports", 50),
+                },
+                "slow_scan": {
+                    "enabled": request.form.get("slow_scan_enabled") == "on",
+                    "severity": request.form.get("slow_scan_severity", "medium").strip().lower(),
+                    "window_seconds": _float("slow_scan_window", 300.0),
+                    "distinct_ports": _int("slow_scan_ports", 20),
+                },
+                "host_sweep": {
+                    "enabled": request.form.get("host_sweep_enabled") == "on",
+                    "severity": request.form.get("host_sweep_severity", "medium").strip().lower(),
+                    "window_seconds": _float("host_sweep_window", 10.0),
+                    "distinct_hosts": _int("host_sweep_hosts", 50),
+                },
+                "syn_burst": {
+                    "enabled": request.form.get("syn_burst_enabled") == "on",
+                    "severity": request.form.get("syn_burst_severity", "high").strip().lower(),
+                    "window_seconds": _float("syn_burst_window", 2.0),
+                    "syn_count": _int("syn_burst_count", 200),
+                },
+                "suspicious_flags": {
+                    "enabled": request.form.get("suspicious_flags_enabled") == "on",
+                    "severity": request.form.get("suspicious_flags_severity", "medium").strip().lower(),
+                    "null_scan": request.form.get("suspicious_flags_null") == "on",
+                    "xmas_scan": request.form.get("suspicious_flags_xmas") == "on",
+                    "fin_only": request.form.get("suspicious_flags_fin") == "on",
+                },
+                "cleartext_protocols": {
+                    "enabled": request.form.get("cleartext_enabled") == "on",
+                    "severity": request.form.get("cleartext_severity", "low").strip().lower(),
+                },
+                "icmp_flood": {
+                    "enabled": request.form.get("icmp_flood_enabled") == "on",
+                    "severity": request.form.get("icmp_flood_severity", "medium").strip().lower(),
+                    "window_seconds": _float("icmp_flood_window", 2.0),
+                    "echo_requests": _int("icmp_flood_requests", 100),
+                },
+                "allowlist": {
+                    "enabled": request.form.get("allowlist_enabled") == "on",
+                    "ips": ips_list,
+                },
+                "alerts": {
+                    "cooldown_seconds": _float("alerts_cooldown", 30.0),
+                },
+                "evidence": {
+                    "enabled": request.form.get("evidence_enabled") == "on",
+                    "max_packets": _int("evidence_max_packets", 500),
+                },
+            }
+
+            save_rules_config(updates, path=rules_path)
+            admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+            log_audit_event(
+                admin_user,
+                "update_rules",
+                "rules/rules.yaml",
+                "Updated detection thresholds and rule configurations",
+            )
+            flash("Detection rules and thresholds updated successfully.", "success")
+            return redirect(url_for("manage_rules"))
+        except (ConfigError, ValueError) as exc:
+            flash(f"Configuration validation error: {exc}", "error")
+        except Exception as exc:
+            flash(f"Error saving configuration: {exc}", "error")
+
+    cfg = load_config(rules_path)
+    return render_template("rules.html", cfg=cfg)
+
+
+def _list_pcap_directory(directory: Path) -> list[dict[str, object]]:
+    """Return metadata for .pcap/.pcapng files in a directory."""
+    if not directory.is_dir():
+        return []
+    files = []
+    for p in sorted(directory.iterdir(), key=lambda x: x.stat().st_mtime if x.is_file() else 0, reverse=True):
+        if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS:
+            st = p.stat()
+            files.append(
+                {
+                    "name": p.name,
+                    "size_kb": round(st.st_size / 1024.0, 2),
+                    "modified": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(st.st_mtime)),
+                }
+            )
+    return files
+
+
+@app.route("/settings/storage")
+@role_required("admin")
+def manage_storage():
+    """IT Administrator view to manage the database and stored evidence/capture files."""
+    cfg = load_config()
+    evidence_dir = PROJECT_ROOT / cfg.evidence.output_dir
+    stats = get_summary_stats()
+    evidence_files = _list_pcap_directory(evidence_dir)
+    upload_files = _list_pcap_directory(UPLOAD_DIR)
+    return render_template(
+        "storage.html",
+        stats=stats,
+        evidence_files=evidence_files,
+        upload_files=upload_files,
+        evidence_dir_name=cfg.evidence.output_dir,
+    )
+
+
+@app.route("/settings/storage/clear-db", methods=["POST"])
+@role_required("admin")
+def admin_clear_database():
+    """Clear all alerts from the database (and optionally purge stored evidence files)."""
+    purge_evidence = request.form.get("purge_evidence") == "on"
+    clear_alerts()
+    removed_files = 0
+    if purge_evidence:
+        cfg = load_config()
+        evidence_dir = PROJECT_ROOT / cfg.evidence.output_dir
+        if evidence_dir.is_dir():
+            for f in evidence_dir.iterdir():
+                if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS:
+                    try:
+                        f.unlink()
+                        removed_files += 1
+                    except OSError:
+                        pass
+
+    admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+    details = f"Cleared all alerts from database (purged {removed_files} evidence files)" if purge_evidence else "Cleared all alerts from database"
+    log_audit_event(admin_user, "clear_database", "Alert Database", details)
+    flash(details + ".", "success")
+    return redirect(url_for("manage_storage"))
+
+
+@app.route("/settings/storage/delete-alert/<int:alert_id>", methods=["POST"])
+@role_required("admin")
+def admin_delete_alert(alert_id: int):
+    """Delete a single alert record and optionally its associated evidence file."""
+    alert = get_alert_by_id(alert_id)
+    if not alert:
+        abort(404, description=f"Alert #{alert_id} not found")
+
+    if request.form.get("delete_evidence") == "on" and alert.get("evidence_file"):
+        ev_path = _resolve_evidence(alert.get("evidence_file"))
+        if ev_path and ev_path.is_file():
+            try:
+                ev_path.unlink()
+            except OSError:
+                pass
+
+    delete_alert(alert_id)
+    admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+    log_audit_event(admin_user, "delete_alert", f"Alert #{alert_id}", f"Deleted alert #{alert_id} ({alert.get('rule')})")
+    flash(f"Alert #{alert_id} deleted from database.", "success")
+    return redirect(url_for("index"))
+
+
+@app.route("/settings/storage/delete-file", methods=["POST"])
+@role_required("admin")
+def admin_delete_file():
+    """Delete a stored evidence PCAP or uploaded PCAP file."""
+    category = request.form.get("category", "evidence").strip().lower()
+    filename = secure_filename(request.form.get("filename", "").strip())
+
+    cfg = load_config()
+    base_dir = (PROJECT_ROOT / cfg.evidence.output_dir) if category == "evidence" else UPLOAD_DIR
+
+    if request.form.get("purge_all") == "1":
+        removed = 0
+        if base_dir.is_dir():
+            for f in base_dir.iterdir():
+                if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS:
+                    try:
+                        f.unlink()
+                        removed += 1
+                    except OSError:
+                        pass
+        admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+        log_audit_event(admin_user, "purge_files", category, f"Purged {removed} {category} PCAP file(s)")
+        flash(f"Purged {removed} {category} file(s) from disk.", "success")
+        return redirect(url_for("manage_storage"))
+
+    if not filename:
+        flash("Invalid filename specified.", "error")
+        return redirect(url_for("manage_storage"))
+
+    target_path = (base_dir / filename).resolve()
+    if not target_path.is_relative_to(base_dir.resolve()) or not target_path.is_file():
+        flash("Requested file does not exist or path is invalid.", "error")
+        return redirect(url_for("manage_storage"))
+
+    try:
+        target_path.unlink()
+        admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+        log_audit_event(admin_user, "delete_file", filename, f"Deleted {category} file '{filename}'")
+        flash(f"Deleted {category} file '{filename}'.", "success")
+    except OSError as exc:
+        flash(f"Could not delete file: {exc}", "error")
+
+    return redirect(url_for("manage_storage"))
+
 
 
 def run_dashboard(host: str = "127.0.0.1", port: int = 5000, debug: bool = False):

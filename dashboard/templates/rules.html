@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+
+{% block title %}Detection Rules & Thresholds - BantayNet Security{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+  <a href="{{ url_for('index') }}" class="btn btn-secondary" style="font-size: 0.8rem; margin-bottom: 1rem;">
+    &larr; Back to Dashboard
+  </a>
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1 style="font-size: 1.5rem; font-weight: 700;">
+        Detection Thresholds &amp; <span style="color: #38bdf8;">Rules Configuration</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+        IT Administrator control panel to tune rule severities, sliding-window parameters, allowlists, and evidence retention.
+      </p>
+    </div>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('manage_rules') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="detail-grid">
+    <!-- Port Scan Rule -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Port Scan (T1046)</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="port_scan_enabled" {% if cfg.port_scan.enabled %}checked{% endif %}>
+          <span>Enabled</span>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+        <div class="form-group">
+          <label for="port_scan_severity">Severity</label>
+          <select id="port_scan_severity" name="port_scan_severity" class="form-control">
+            <option value="high" {% if cfg.port_scan.severity == 'high' %}selected{% endif %}>High</option>
+            <option value="medium" {% if cfg.port_scan.severity == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="low" {% if cfg.port_scan.severity == 'low' %}selected{% endif %}>Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="port_scan_window">Window (sec)</label>
+          <input type="number" step="any" min="0.1" id="port_scan_window" name="port_scan_window" class="form-control" value="{{ cfg.port_scan.window_seconds }}" required>
+        </div>
+        <div class="form-group">
+          <label for="port_scan_ports">Distinct Ports</label>
+          <input type="number" min="1" id="port_scan_ports" name="port_scan_ports" class="form-control" value="{{ cfg.port_scan.distinct_ports }}" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slow Scan Rule -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Slow Scan (Low-and-Slow)</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="slow_scan_enabled" {% if cfg.slow_scan.enabled %}checked{% endif %}>
+          <span>Enabled</span>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+        <div class="form-group">
+          <label for="slow_scan_severity">Severity</label>
+          <select id="slow_scan_severity" name="slow_scan_severity" class="form-control">
+            <option value="high" {% if cfg.slow_scan.severity == 'high' %}selected{% endif %}>High</option>
+            <option value="medium" {% if cfg.slow_scan.severity == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="low" {% if cfg.slow_scan.severity == 'low' %}selected{% endif %}>Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="slow_scan_window">Window (sec)</label>
+          <input type="number" step="any" min="0.1" id="slow_scan_window" name="slow_scan_window" class="form-control" value="{{ cfg.slow_scan.window_seconds }}" required>
+        </div>
+        <div class="form-group">
+          <label for="slow_scan_ports">Distinct Ports</label>
+          <input type="number" min="1" id="slow_scan_ports" name="slow_scan_ports" class="form-control" value="{{ cfg.slow_scan.distinct_ports }}" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- Host Sweep Rule -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Host Sweep (T1018)</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="host_sweep_enabled" {% if cfg.host_sweep.enabled %}checked{% endif %}>
+          <span>Enabled</span>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+        <div class="form-group">
+          <label for="host_sweep_severity">Severity</label>
+          <select id="host_sweep_severity" name="host_sweep_severity" class="form-control">
+            <option value="high" {% if cfg.host_sweep.severity == 'high' %}selected{% endif %}>High</option>
+            <option value="medium" {% if cfg.host_sweep.severity == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="low" {% if cfg.host_sweep.severity == 'low' %}selected{% endif %}>Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="host_sweep_window">Window (sec)</label>
+          <input type="number" step="any" min="0.1" id="host_sweep_window" name="host_sweep_window" class="form-control" value="{{ cfg.host_sweep.window_seconds }}" required>
+        </div>
+        <div class="form-group">
+          <label for="host_sweep_hosts">Distinct Hosts</label>
+          <input type="number" min="1" id="host_sweep_hosts" name="host_sweep_hosts" class="form-control" value="{{ cfg.host_sweep.distinct_hosts }}" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- SYN Burst Rule -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>SYN Burst / Flood (T1498)</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="syn_burst_enabled" {% if cfg.syn_burst.enabled %}checked{% endif %}>
+          <span>Enabled</span>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+        <div class="form-group">
+          <label for="syn_burst_severity">Severity</label>
+          <select id="syn_burst_severity" name="syn_burst_severity" class="form-control">
+            <option value="high" {% if cfg.syn_burst.severity == 'high' %}selected{% endif %}>High</option>
+            <option value="medium" {% if cfg.syn_burst.severity == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="low" {% if cfg.syn_burst.severity == 'low' %}selected{% endif %}>Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="syn_burst_window">Window (sec)</label>
+          <input type="number" step="any" min="0.1" id="syn_burst_window" name="syn_burst_window" class="form-control" value="{{ cfg.syn_burst.window_seconds }}" required>
+        </div>
+        <div class="form-group">
+          <label for="syn_burst_count">SYN Packet Count</label>
+          <input type="number" min="1" id="syn_burst_count" name="syn_burst_count" class="form-control" value="{{ cfg.syn_burst.syn_count }}" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- ICMP Flood Rule -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>ICMP Echo Flood</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="icmp_flood_enabled" {% if cfg.icmp_flood.enabled %}checked{% endif %}>
+          <span>Enabled</span>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+        <div class="form-group">
+          <label for="icmp_flood_severity">Severity</label>
+          <select id="icmp_flood_severity" name="icmp_flood_severity" class="form-control">
+            <option value="high" {% if cfg.icmp_flood.severity == 'high' %}selected{% endif %}>High</option>
+            <option value="medium" {% if cfg.icmp_flood.severity == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="low" {% if cfg.icmp_flood.severity == 'low' %}selected{% endif %}>Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="icmp_flood_window">Window (sec)</label>
+          <input type="number" step="any" min="0.1" id="icmp_flood_window" name="icmp_flood_window" class="form-control" value="{{ cfg.icmp_flood.window_seconds }}" required>
+        </div>
+        <div class="form-group">
+          <label for="icmp_flood_requests">Echo Requests</label>
+          <input type="number" min="1" id="icmp_flood_requests" name="icmp_flood_requests" class="form-control" value="{{ cfg.icmp_flood.echo_requests }}" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- Suspicious TCP Flags & Cleartext Rules -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Suspicious TCP Flags &amp; Cleartext</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="suspicious_flags_enabled" {% if cfg.suspicious_flags.enabled %}checked{% endif %}>
+          <span>Flags Enabled</span>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+        <div class="form-group">
+          <label for="suspicious_flags_severity">Flags Severity</label>
+          <select id="suspicious_flags_severity" name="suspicious_flags_severity" class="form-control">
+            <option value="high" {% if cfg.suspicious_flags.severity == 'high' %}selected{% endif %}>High</option>
+            <option value="medium" {% if cfg.suspicious_flags.severity == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="low" {% if cfg.suspicious_flags.severity == 'low' %}selected{% endif %}>Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="cleartext_severity">Cleartext Severity</label>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="checkbox" name="cleartext_enabled" {% if cfg.cleartext_protocols.enabled %}checked{% endif %} title="Enable Cleartext Protocol Detection">
+            <select id="cleartext_severity" name="cleartext_severity" class="form-control" style="flex: 1;">
+              <option value="high" {% if cfg.cleartext_protocols.severity == 'high' %}selected{% endif %}>High</option>
+              <option value="medium" {% if cfg.cleartext_protocols.severity == 'medium' %}selected{% endif %}>Medium</option>
+              <option value="low" {% if cfg.cleartext_protocols.severity == 'low' %}selected{% endif %}>Low</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 1rem; margin-top: 0.75rem; font-size: 0.82rem;">
+        <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+          <input type="checkbox" name="suspicious_flags_null" {% if cfg.suspicious_flags.null_scan %}checked{% endif %}> NULL Scan
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+          <input type="checkbox" name="suspicious_flags_xmas" {% if cfg.suspicious_flags.xmas_scan %}checked{% endif %}> XMAS Scan
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+          <input type="checkbox" name="suspicious_flags_fin" {% if cfg.suspicious_flags.fin_only %}checked{% endif %}> FIN-Only
+        </label>
+      </div>
+    </div>
+
+    <!-- Allowlist & Cooldown Settings -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Trusted IP Allowlist</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="allowlist_enabled" {% if cfg.allowlist.enabled %}checked{% endif %}>
+          <span>Enabled</span>
+        </label>
+      </div>
+      <div class="form-group" style="margin-top: 0.75rem;">
+        <label for="allowlist_ips">Allowlisted IPs / CIDR Subnets (comma or newline separated)</label>
+        <textarea id="allowlist_ips" name="allowlist_ips" class="form-control" rows="3" style="width: 100%; font-family: monospace;">{{ cfg.allowlist.ips|join('\n') }}</textarea>
+      </div>
+    </div>
+
+    <!-- Alert Deduplication & Evidence Settings -->
+    <div class="panel">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Deduplication &amp; Evidence Capture</span>
+        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+          <input type="checkbox" name="evidence_enabled" {% if cfg.evidence.enabled %}checked{% endif %}>
+          <span>Save Evidence PCAPs</span>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+        <div class="form-group">
+          <label for="alerts_cooldown">Alert Cooldown (sec)</label>
+          <input type="number" step="any" min="1" id="alerts_cooldown" name="alerts_cooldown" class="form-control" value="{{ cfg.alerts.cooldown_seconds }}" required>
+        </div>
+        <div class="form-group">
+          <label for="evidence_max_packets">Max Packets per Evidence File</label>
+          <input type="number" min="1" id="evidence_max_packets" name="evidence_max_packets" class="form-control" value="{{ cfg.evidence.max_packets }}" required>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+    <a href="{{ url_for('manage_rules') }}" class="btn btn-secondary">Discard Changes</a>
+    <button type="submit" class="btn btn-primary">Save Detection Rules</button>
+  </div>
+</form>
+{% endblock %}
+

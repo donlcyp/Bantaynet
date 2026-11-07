@@ -27,6 +27,7 @@
         {{ alert.description }}
       </p>
     </div>
+    {% if current_user and current_user.role in ['admin', 'analyst'] %}
     <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
       <a href="{{ url_for('alert_report_pdf', alert_id=alert.id) }}" class="btn btn-secondary">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -47,7 +48,16 @@
         Download Evidence PCAP
       </a>
       {% endif %}
+      {% if current_user.role == 'admin' %}
+      <form method="POST" action="{{ url_for('admin_delete_alert', alert_id=alert.id) }}" onsubmit="return confirm('Delete Alert #{{ alert.id }} from the database?');" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-secondary" style="color: #f87171; border-color: rgba(239, 68, 68, 0.4);">
+          Delete Alert
+        </button>
+      </form>
+      {% endif %}
     </div>
+    {% endif %}
   </div>
 </div>
 

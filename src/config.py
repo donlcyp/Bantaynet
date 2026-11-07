@@ -233,3 +233,37 @@ def load_config(path: str | Path | None = None) -> Config:
         raise ConfigError(f"unknown section(s) in {path.name}: {', '.join(sorted(map(str, unknown)))}")
 
     return Config(**{name: _build_section(name, factory, raw.get(name)) for name, factory in sections.items()})
+
+
+def save_rules_config(updates: dict[str, Any], path: str | Path | None = None) -> Config:
+    """Validate and persist updated rule & threshold settings to YAML (default: rules/rules.yaml)."""
+    target_path = Path(path) if path is not None else DEFAULT_RULES_PATH
+    existing: dict[str, Any] = {}
+    if target_path.is_file():
+        try:
+            loaded = yaml.safe_load(target_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except yaml.YAMLError:
+            existing = {}
+
+    for section, values in updates.items():
+        if isinstance(values, dict) and isinstance(existing.get(section), dict):
+            existing[section] = {**existing[section], **values}
+        else:
+            existing[section] = values
+
+    # Validate merged configuration before writing to disk
+    sections = {f.name: f.default_factory for f in fields(Config)}  # type: ignore[misc]
+    unknown = set(existing) - set(sections)
+    if unknown:
+        raise ConfigError(f"unknown section(s): {', '.join(sorted(map(str, unknown)))}")
+
+    validated_cfg = Config(
+        **{name: _build_section(name, factory, existing.get(name)) for name, factory in sections.items()}
+    )
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(yaml.safe_dump(existing, sort_keys=False, default_flow_style=False), encoding="utf-8")
+    return validated_cfg
+

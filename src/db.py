@@ -1007,6 +1007,27 @@ def get_chart_data(db_path: Path | str | None = None) -> dict[str, Any]:
     }
 
 
+def delete_alert(alert_id: int, db_path: Path | str | None = None) -> bool:
+    """Delete a single alert record by ID."""
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
+            conn.close()
+            return True
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        conn.execute("DELETE FROM alerts WHERE id = ?", (alert_id,))
+        conn.commit()
+    return True
+
+
 def clear_alerts(db_path: Path | str | None = None) -> None:
     """Clear all stored alerts."""
     init_db(db_path)

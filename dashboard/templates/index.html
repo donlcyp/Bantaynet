@@ -243,7 +243,7 @@
               <a href="{{ url_for('alert_detail', alert_id=a.id) }}" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">
                 Inspect
               </a>
-              {% if a.evidence_file %}
+              {% if a.evidence_file and current_user and current_user.role in ['admin', 'analyst'] %}
               <a href="{{ url_for('download_evidence', alert_id=a.id) }}" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" title="Download evidence .pcap">
                 PCAP
               </a>
@@ -259,7 +259,9 @@
   <div class="empty-state">
     <h3>No Suspicious Alerts Found</h3>
     <p>Upload a capture file or adjust filter criteria above to inspect activity.</p>
+    {% if current_user and current_user.role in ['admin', 'analyst'] %}
     <button type="button" class="btn btn-primary" style="margin-top: 1rem;" onclick="openUploadModal()">Upload PCAP File</button>
+    {% endif %}
   </div>
   {% endif %}
 </div>

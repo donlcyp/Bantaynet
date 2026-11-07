@@ -185,3 +185,117 @@ def test_role_based_access_control(auth_db: Path):
             follow_redirects=True,
         )
         assert b"created successfully" in res_add.data
+
+
+def test_admin_rules_and_storage_management(auth_db: Path, tmp_path: Path, monkeypatch):
+    """Verify IT Administrator can configure detection rules and manage database/evidence files, while Analyst/Viewer cannot."""
+    import shutil
+    from src.config import DEFAULT_RULES_PATH, load_config
+
+    temp_rules = tmp_path / "rules.yaml"
+    shutil.copy(DEFAULT_RULES_PATH, temp_rules)
+    monkeypatch.setattr("dashboard.app.DEFAULT_RULES_PATH", temp_rules)
+    monkeypatch.setattr("dashboard.app.PROJECT_ROOT", tmp_path)
+
+    ev_dir = tmp_path / "evidence"
+    ev_dir.mkdir(parents=True, exist_ok=True)
+    ev_file = ev_dir / "sample_evidence.pcap"
+    ev_file.write_bytes(b"\xd4\xc3\xb2\xa1\x00\x02\x00\x04")
+
+    aid = insert_alert(
+        rule="port_scan",
+        severity="high",
+        src_ip="10.0.0.50",
+        dst_ip="10.0.0.1",
+        packet_time="2026-10-23T12:00:00",
+        description="Port scan alert with evidence",
+        evidence_file="evidence/sample_evidence.pcap",
+        db_path=auth_db,
+    )
+
+    app.config["TESTING"] = True
+    app.config["FORCE_AUTH_TESTING"] = True
+
+    # 1. Viewer cannot export CSV, download evidence, or access Admin settings
+    with app.test_client() as viewer_client:
+        viewer_client.post("/login", data={"username": "viewer", "password": "viewer123!"})
+        assert b"Access restricted" in viewer_client.get("/export.csv", follow_redirects=True).data
+        assert b"Access restricted" in viewer_client.get(f"/evidence/{aid}", follow_redirects=True).data
+        assert b"Access restricted" in viewer_client.get("/settings/rules", follow_redirects=True).data
+        assert b"Access restricted" in viewer_client.get("/settings/storage", follow_redirects=True).data
+
+    # 2. Analyst can export CSV and download evidence, but cannot access Admin rules/storage settings
+    with app.test_client() as analyst_client:
+        analyst_client.post("/login", data={"username": "analyst", "password": "analyst123!"})
+        assert analyst_client.get("/export.csv").status_code == 200
+        assert analyst_client.get(f"/evidence/{aid}").status_code == 200
+        assert b"Access restricted" in analyst_client.get("/settings/rules", follow_redirects=True).data
+        assert b"Access restricted" in analyst_client.get("/settings/storage", follow_redirects=True).data
+
+    # 3. Admin can configure detection rules/thresholds and manage database & evidence files
+    with app.test_client() as admin_client:
+        admin_client.post("/login", data={"username": "admin", "password": "admin123!"})
+
+        res_rules_get = admin_client.get("/settings/rules")
+        assert res_rules_get.status_code == 200
+        assert b"Detection Thresholds" in res_rules_get.data
+
+        res_rules_post = admin_client.post(
+            "/settings/rules",
+            data={
+                "port_scan_enabled": "on",
+                "port_scan_severity": "high",
+                "port_scan_window": "10",
+                "port_scan_ports": "75",
+                "slow_scan_enabled": "on",
+                "slow_scan_severity": "medium",
+                "slow_scan_window": "300",
+                "slow_scan_ports": "25",
+                "host_sweep_enabled": "on",
+                "host_sweep_severity": "medium",
+                "host_sweep_window": "10",
+                "host_sweep_hosts": "50",
+                "syn_burst_enabled": "on",
+                "syn_burst_severity": "high",
+                "syn_burst_window": "2",
+                "syn_burst_count": "200",
+                "suspicious_flags_enabled": "on",
+                "suspicious_flags_severity": "medium",
+                "suspicious_flags_null": "on",
+                "suspicious_flags_xmas": "on",
+                "suspicious_flags_fin": "on",
+                "cleartext_enabled": "on",
+                "cleartext_severity": "low",
+                "icmp_flood_enabled": "on",
+                "icmp_flood_severity": "medium",
+                "icmp_flood_window": "2",
+                "icmp_flood_requests": "100",
+                "allowlist_enabled": "on",
+                "allowlist_ips": "10.0.0.5\n192.168.1.100",
+                "alerts_cooldown": "45",
+                "evidence_enabled": "on",
+                "evidence_max_packets": "600",
+            },
+            follow_redirects=True,
+        )
+        assert b"updated successfully" in res_rules_post.data
+        updated_cfg = load_config(temp_rules)
+        assert updated_cfg.port_scan.distinct_ports == 75
+        assert updated_cfg.port_scan.window_seconds == 10.0
+        assert updated_cfg.alerts.cooldown_seconds == 45.0
+        assert "192.168.1.100" in updated_cfg.allowlist.ips
+
+        # Storage view shows evidence file
+        res_storage = admin_client.get("/settings/storage")
+        assert res_storage.status_code == 200
+        assert b"sample_evidence.pcap" in res_storage.data
+
+        # Delete evidence file and clear DB
+        res_clear = admin_client.post(
+            "/settings/storage/clear-db",
+            data={"purge_evidence": "on"},
+            follow_redirects=True,
+        )
+        assert b"Cleared all alerts from database" in res_clear.data
+        assert not ev_file.exists()
+

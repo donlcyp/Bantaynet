@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Database & Evidence Storage - BantayNet Security{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+  <a href="{{ url_for('index') }}" class="btn btn-secondary" style="font-size: 0.8rem; margin-bottom: 1rem;">
+    &larr; Back to Dashboard
+  </a>
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1 style="font-size: 1.5rem; font-weight: 700;">
+        Database &amp; <span style="color: #38bdf8;">Evidence Management</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+        IT Administrator storage console to manage the alert database, forensic evidence snippets, and uploaded PCAP files.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Database Management Card -->
+<div class="detail-grid" style="margin-bottom: 1.5rem;">
+  <div class="panel">
+    <div class="panel-title">Alert Database Status</div>
+    <dl class="info-list" style="margin-top: 0.75rem;">
+      <dt>Active Engine</dt>
+      <dd><span style="color: #10b981; font-weight: 600;">{{ db_engine_name }}</span></dd>
+      <dt>Total Stored Alerts</dt>
+      <dd><strong>{{ stats.total }}</strong> ({{ stats.high }} High, {{ stats.medium }} Medium, {{ stats.low }} Low)</dd>
+      <dt>Evidence Snippets on Disk</dt>
+      <dd>{{ evidence_files|length }} file(s) in <code>{{ evidence_dir_name }}/</code></dd>
+      <dt>Uploaded Captures on Disk</dt>
+      <dd>{{ upload_files|length }} file(s) in <code>pcaps/uploads/</code></dd>
+    </dl>
+  </div>
+
+  <div class="panel" style="border-color: rgba(239, 68, 68, 0.35);">
+    <div class="panel-title" style="color: #f87171;">Database Maintenance Actions</div>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 1rem;">
+      Clearing the alert database permanently removes all stored alert records. You may optionally purge associated forensic evidence <code>.pcap</code> snippets at the same time.
+    </p>
+    <form method="POST" action="{{ url_for('admin_clear_database') }}" onsubmit="return confirm('Are you sure you want to clear all alerts from the database?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; margin-bottom: 1rem; cursor: pointer;">
+        <input type="checkbox" name="purge_evidence">
+        <span>Also delete all stored evidence PCAP snippets from disk</span>
+      </label>
+      <button type="submit" class="btn btn-secondary" style="color: #f87171; border-color: rgba(239, 68, 68, 0.45);">
+        Clear Alert Database
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Stored Evidence Files Table -->
+<div class="panel" style="padding: 0; overflow: hidden; margin-bottom: 1.5rem;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+    <div>
+      <h2 style="font-size: 1.05rem; font-weight: 600;">Stored Evidence Files ({{ evidence_files|length }})</h2>
+      <div style="font-size: 0.8rem; color: var(--text-dim);">Forensic packet snippets preserved in <code>{{ evidence_dir_name }}/</code></div>
+    </div>
+    {% if evidence_files %}
+    <form method="POST" action="{{ url_for('admin_delete_file') }}" onsubmit="return confirm('Delete ALL stored evidence PCAP files?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="category" value="evidence">
+      <input type="hidden" name="purge_all" value="1">
+      <button type="submit" class="btn btn-secondary" style="font-size: 0.78rem; color: #f87171; border-color: rgba(239, 68, 68, 0.35);">
+        Purge All Evidence Files
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if evidence_files %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Size (KB)</th>
+          <th>Last Modified (UTC)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in evidence_files %}
+        <tr>
+          <td><code>{{ f.name }}</code></td>
+          <td>{{ f.size_kb }} KB</td>
+          <td style="font-size: 0.82rem; color: var(--text-muted);">{{ f.modified }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('admin_delete_file') }}" onsubmit="return confirm('Delete evidence file \'{{ f.name }}\'?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="category" value="evidence">
+              <input type="hidden" name="filename" value="{{ f.name }}">
+              <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+                Delete
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding: 1.75rem; text-align: center; color: var(--text-dim);">
+    No stored evidence PCAP files currently on disk.
+  </div>
+  {% endif %}
+</div>
+
+<!-- Uploaded Capture Files Table -->
+<div class="panel" style="padding: 0; overflow: hidden;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+    <div>
+      <h2 style="font-size: 1.05rem; font-weight: 600;">Uploaded Capture Files ({{ upload_files|length }})</h2>
+      <div style="font-size: 0.8rem; color: var(--text-dim);">Raw PCAP uploads stored in <code>pcaps/uploads/</code></div>
+    </div>
+    {% if upload_files %}
+    <form method="POST" action="{{ url_for('admin_delete_file') }}" onsubmit="return confirm('Delete ALL uploaded PCAP files?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="category" value="uploads">
+      <input type="hidden" name="purge_all" value="1">
+      <button type="submit" class="btn btn-secondary" style="font-size: 0.78rem; color: #f87171; border-color: rgba(239, 68, 68, 0.35);">
+        Purge All Uploaded PCAPs
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if upload_files %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Size (KB)</th>
+          <th>Uploaded (UTC)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in upload_files %}
+        <tr>
+          <td><code>{{ f.name }}</code></td>
+          <td>{{ f.size_kb }} KB</td>
+          <td style="font-size: 0.82rem; color: var(--text-muted);">{{ f.modified }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('admin_delete_file') }}" onsubmit="return confirm('Delete uploaded capture \'{{ f.name }}\'?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="category" value="uploads">
+              <input type="hidden" name="filename" value="{{ f.name }}">
+              <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+                Delete
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding: 1.75rem; text-align: center; color: var(--text-dim);">
+    No uploaded PCAP files currently stored in <code>pcaps/uploads/</code>.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
