@@ -521,6 +521,8 @@ def test_email_notification_error_handling(monkeypatch):
     monkeypatch.setenv("BANTAYNET_SMTP_PASSWORD", "")
     monkeypatch.setenv("GMAIL_USER", "")
     monkeypatch.setenv("BANTAYNET_SMTP_USER", "")
+    monkeypatch.setenv("GMAIL_WEBHOOK_URL", "")
+    monkeypatch.setenv("GMAIL_SCRIPT_URL", "")
     monkeypatch.setenv("MAILTRAP_API_TOKEN", "")
     monkeypatch.setenv("MAILTRAP_TOKEN", "")
     monkeypatch.setenv("RESEND_API_KEY", "")

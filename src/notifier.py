@@ -290,6 +290,59 @@ def _send_via_mailtrap_api(
         return False, f"Mailtrap delivery failed: {exc}"
 
 
+def _send_via_google_script_api(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    text_content: str,
+) -> tuple[bool, str] | None:
+    """Send email directly from user's Gmail account via Google Apps Script Web App (HTTPS Port 443).
+
+    Bypasses Render free tier SMTP blocks completely because it runs over HTTPS (Port 443).
+    Returns None if GMAIL_WEBHOOK_URL is not configured.
+    """
+    webhook_url = (os.environ.get("GMAIL_WEBHOOK_URL") or os.environ.get("GMAIL_SCRIPT_URL") or "").strip()
+    if not webhook_url:
+        return None
+
+    import json
+    import urllib.error
+    import urllib.request
+
+    secret = (os.environ.get("GMAIL_WEBHOOK_SECRET") or "BantayNet2026Secret").strip()
+    payload = {
+        "secret": secret,
+        "to": to_email,
+        "subject": subject,
+        "text": text_content,
+        "html": html_content,
+    }
+
+    req = urllib.request.Request(
+        webhook_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "BantayNet-SOC/1.0",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("status") == "success":
+                logger.info("Successfully delivered email to %s via Google Apps Script (Gmail Bridge)", to_email)
+                return True, "Email delivered successfully via Gmail."
+            else:
+                err_msg = data.get("message") or data.get("status") or "Unknown Google Script error"
+                logger.error("Google Apps Script returned failure: %s", err_msg)
+                return False, f"Gmail bridge error: {err_msg}"
+    except Exception as exc:
+        logger.error("Google Apps Script request failed: %s", exc)
+        return False, f"Gmail bridge connection failed: {exc}"
+
+
 def _send_via_https_api(
     to_email: str,
     subject: str,
@@ -297,17 +350,22 @@ def _send_via_https_api(
     text_content: str,
     sender: str = "",
 ) -> tuple[bool, str] | None:
-    """Send email via Mailtrap or Resend HTTPS REST API (port 443).
+    """Send email via Google Apps Script, Mailtrap, or Resend HTTPS REST API (port 443).
 
     Render free tier blocks all outbound SMTP ports (25, 465, 587). Port 443 (HTTPS)
-    is never blocked. Returns None if neither HTTPS API is configured.
+    is never blocked. Returns None if no HTTPS API is configured.
     """
-    # Priority 1: Mailtrap HTTPS API
+    # Priority 1: Google Apps Script Webhook (Sends directly from user's real Gmail via HTTPS Port 443)
+    google_res = _send_via_google_script_api(to_email, subject, html_content, text_content)
+    if google_res is not None:
+        return google_res
+
+    # Priority 2: Mailtrap HTTPS API
     mailtrap_res = _send_via_mailtrap_api(to_email, subject, html_content, text_content, sender)
     if mailtrap_res is not None:
         return mailtrap_res
 
-    # Priority 2: Resend HTTPS API
+    # Priority 3: Resend HTTPS API
     api_key = (os.environ.get("RESEND_API_KEY") or "").strip()
     if not api_key:
         return None
@@ -355,8 +413,17 @@ def _send_via_https_api(
         return False, f"HTTPS Email API failed: {exc}"
 
 
+def _has_https_api() -> bool:
+    """Return True if any Port 443 HTTPS email dispatcher is configured (Google Script, Mailtrap, or Resend)."""
+    return bool(
+        (os.environ.get("GMAIL_WEBHOOK_URL") or os.environ.get("GMAIL_SCRIPT_URL") or "").strip()
+        or (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
+        or (os.environ.get("RESEND_API_KEY") or "").strip()
+    )
+
+
 def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tuple[bool, str]:
-    """Dispatch a 6-digit 2FA verification code to the operator's email address via Mailtrap, Resend, or SMTP.
+    """Dispatch a 6-digit 2FA verification code to the operator's email address via Google Script, Mailtrap, Resend, or SMTP.
 
     Returns (success: bool, message: str).
     """
@@ -365,18 +432,15 @@ def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tupl
         return False, "Recipient email address is missing."
 
     conf = _get_smtp_credentials()
-    has_https_api = bool(
-        (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
-        or (os.environ.get("RESEND_API_KEY") or "").strip()
-    )
+    has_https = _has_https_api()
 
-    if not conf["password"] and not has_https_api:
+    if not conf["password"] and not has_https:
         logger.warning(
-            "Email credentials not configured (MAILTRAP_API_TOKEN / GMAIL_APP_PASSWORD missing). [Dev/Lab OTP for %s: %s]",
+            "Email credentials not configured (GMAIL_WEBHOOK_URL / MAILTRAP_API_TOKEN / GMAIL_APP_PASSWORD missing). [Dev/Lab OTP for %s: %s]",
             to_email,
             otp_code,
         )
-        return False, "Email service is not configured (set MAILTRAP_API_TOKEN or GMAIL_APP_PASSWORD)."
+        return False, "Email service is not configured (set GMAIL_WEBHOOK_URL, MAILTRAP_API_TOKEN, or GMAIL_APP_PASSWORD)."
 
     try:
         msg = MIMEMultipart("alternative")
@@ -458,10 +522,7 @@ def send_account_created_email(
         return False, "Recipient email address is missing."
 
     conf = _get_smtp_credentials()
-    has_https_api = bool(
-        (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
-        or (os.environ.get("RESEND_API_KEY") or "").strip()
-    )
+    has_https_api = _has_https_api()
 
     if not conf["password"] and not has_https_api:
         logger.warning(
@@ -470,7 +531,7 @@ def send_account_created_email(
             to_email,
             temp_password,
         )
-        return False, "Email service is not configured (set MAILTRAP_API_TOKEN or GMAIL_APP_PASSWORD)."
+        return False, "Email service is not configured (set GMAIL_WEBHOOK_URL, MAILTRAP_API_TOKEN, or GMAIL_APP_PASSWORD)."
 
     try:
         msg = MIMEMultipart("alternative")
@@ -591,9 +652,7 @@ def send_alert_email(
         msg.attach(MIMEText(body, "plain"))
 
         # Check HTTPS REST API first if configured and no explicit custom SMTP server is defined
-        if settings.smtp_server in ("localhost", "smtp.gmail.com") and (
-            os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or os.environ.get("RESEND_API_KEY")
-        ):
+        if settings.smtp_server in ("localhost", "smtp.gmail.com") and _has_https_api():
             api_res = _send_via_https_api(
                 settings.recipient,
                 msg["Subject"],
@@ -635,12 +694,8 @@ def test_smtp_connection(recipient_email: str) -> tuple[bool, str]:
     if not to_email:
         return False, "Recipient email address is required."
 
-    # Priority 1: Check HTTPS REST API if configured (Mailtrap or Resend)
-    has_https_api = bool(
-        (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
-        or (os.environ.get("RESEND_API_KEY") or "").strip()
-    )
-    if has_https_api:
+    # Priority 1: Check HTTPS REST API if configured (Google Script, Mailtrap, or Resend)
+    if _has_https_api():
         api_res = _send_via_https_api(
             to_email,
             "[BantayNet SOC] HTTPS Email Delivery Test",
