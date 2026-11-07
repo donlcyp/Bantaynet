@@ -9,12 +9,24 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 import smtplib
+import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
 from src.config import NotificationSettings
+
+# Automatically load environment variables from .env if present
+try:
+    from dotenv import load_dotenv
+
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(_env_path)
+except ImportError:
+    pass
 
 logger = logging.getLogger("bantaynet.notifier")
 
@@ -258,13 +270,19 @@ def send_alert_email(
         )
         msg.attach(MIMEText(body, "plain"))
 
-        password = os.environ.get("BANTAYNET_SMTP_PASSWORD", "")
+        conf = _get_smtp_credentials()
+        smtp_server = settings.smtp_server if settings.smtp_server != "localhost" else (conf["server"] or "localhost")
+        smtp_port = settings.smtp_port if settings.smtp_port != 587 else (conf["port"] or 587)
+        sender = settings.sender if settings.sender != "alerts@bantaynet.local" else conf["sender"]
+        password = conf["password"] or os.environ.get("BANTAYNET_SMTP_PASSWORD", "")
 
-        server = smtplib.SMTP(settings.smtp_server, settings.smtp_port, timeout=10)
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
         if settings.use_tls:
             server.starttls()
-        if password:
-            server.login(settings.sender, password)
+        if password and conf["user"]:
+            server.login(conf["user"], password)
+        elif password:
+            server.login(sender, password)
 
         server.send_message(msg)
         server.quit()
@@ -273,4 +291,100 @@ def send_alert_email(
     except Exception as exc:
         logger.warning("Could not dispatch alert notification email: %s", exc)
         return False
+
+
+def test_smtp_connection(recipient_email: str) -> tuple[bool, str]:
+    """Test the SMTP / Gmail configuration and dispatch a test message to recipient_email.
+
+    Returns (success: bool, status_message: str).
+    """
+    to_email = (recipient_email or "").strip()
+    if not to_email:
+        return False, "Recipient email address is required."
+
+    conf = _get_smtp_credentials()
+    if not conf["password"]:
+        return (
+            False,
+            "SMTP password not found. Please set GMAIL_APP_PASSWORD (for Gmail) or BANTAYNET_SMTP_PASSWORD in your .env file.",
+        )
+    if not conf["user"]:
+        return (
+            False,
+            "SMTP user not found. Please set GMAIL_USER (for Gmail) or BANTAYNET_SMTP_USER in your .env file.",
+        )
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "[BantayNet SOC] Gmail SMTP Integration Test Successful"
+        msg["From"] = conf["sender"]
+        msg["To"] = to_email
+
+        body_text = (
+            "Congratulations! Your BantayNet Gmail SMTP integration is functioning successfully.\n\n"
+            f"SMTP Server:  {conf['server']}:{conf['port']}\n"
+            f"Sender Email: {conf['sender']}\n"
+            f"Recipient:    {to_email}\n\n"
+            "This confirms that 2FA security OTPs, password setup notifications, and high-severity "
+            "alerts can be delivered to authorized operators via Gmail SMTP.\n\n"
+            "-- BantayNet Intrusion Alert System\n"
+        )
+
+        body_html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; background: #0b1528; border: 1px solid #1e3a5f; border-radius: 8px; color: #f1f5f9;">
+          <div style="border-bottom: 1px solid #1e3a5f; padding-bottom: 12px; margin-bottom: 20px;">
+            <h2 style="color: #38bdf8; margin: 0; font-size: 1.3rem;">Bantay<span style="color: #ffffff;">Net</span> SMTP Verified</h2>
+            <div style="color: #94a3b8; font-size: 0.8rem; margin-top: 4px;">Gmail SMTP Integration Test</div>
+          </div>
+          <div style="padding: 12px 16px; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; margin-bottom: 16px; color: #34d399; font-weight: 600;">
+            ✓ SMTP Connection &amp; TLS Handshake Successful
+          </div>
+          <p style="font-size: 0.95rem; color: #cbd5e1;">
+            Your BantayNet Gmail SMTP integration is properly configured.
+          </p>
+          <div style="background: #070e1c; padding: 12px 16px; border-radius: 6px; font-size: 0.85rem; font-family: monospace; color: #94a3b8; line-height: 1.6; margin: 16px 0;">
+            <div><strong>Server:</strong> {conf['server']}:{conf['port']}</div>
+            <div><strong>Sender:</strong> {conf['sender']}</div>
+            <div><strong>Recipient:</strong> {to_email}</div>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8;">
+            2FA authentication codes, new operator temporary passwords, and high-severity security alert notifications will now be delivered via Gmail.
+          </p>
+        </div>
+        """
+
+        msg.attach(MIMEText(body_text, "plain"))
+        msg.attach(MIMEText(body_html, "html"))
+
+        server = smtplib.SMTP(conf["server"], conf["port"], timeout=15)
+        if conf["use_tls"]:
+            server.starttls()
+        server.login(conf["user"], conf["password"])
+        server.send_message(msg)
+        server.quit()
+        return True, f"Success! Verification email successfully delivered to '{to_email}' via Gmail SMTP."
+    except smtplib.SMTPAuthenticationError as exc:
+        return (
+            False,
+            f"Gmail SMTP Authentication Failed ({exc.smtp_code}): Please ensure you are using a 16-character Google App Password (not your standard Google account password). Go to: https://myaccount.google.com/apppasswords",
+        )
+    except Exception as exc:
+        return False, f"SMTP Connection failed: {exc}"
+
+
+if __name__ == "__main__":
+    recipient = sys.argv[1] if len(sys.argv) > 1 else None
+    if not recipient:
+        print("Usage: python -m src.notifier <test_recipient_email>")
+        print("Example: python -m src.notifier operator@example.com")
+        sys.exit(1)
+
+    print(f"[*] Testing BantayNet Gmail SMTP connection to {recipient}...")
+    success, message = test_smtp_connection(recipient)
+    if success:
+        print(f"[+] {message}")
+        sys.exit(0)
+    else:
+        print(f"[-] {message}")
+        sys.exit(1)
 

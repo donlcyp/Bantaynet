@@ -505,7 +505,7 @@ def test_first_time_password_change_flow(test_app_client):
 
 def test_email_notification_error_handling():
     """Verify email dispatcher functions gracefully handle unconfigured or invalid email without throwing exceptions."""
-    from src.notifier import send_2fa_otp_email, send_account_created_email
+    from src.notifier import send_2fa_otp_email, send_account_created_email, test_smtp_connection
 
     # Missing email
     ok1, msg1 = send_2fa_otp_email("", "123456")
@@ -520,6 +520,14 @@ def test_email_notification_error_handling():
     ok3, msg3 = send_account_created_email("test@example.com", "user", "TempPass!")
     assert ok3 is False
     assert "not configured" in msg3.lower()
+
+    ok4, msg4 = test_smtp_connection("")
+    assert ok4 is False
+    assert "required" in msg4.lower()
+
+    ok5, msg5 = test_smtp_connection("test@example.com")
+    assert ok5 is False
+    assert "password" in msg5.lower() or "not found" in msg5.lower()
 
 
 
