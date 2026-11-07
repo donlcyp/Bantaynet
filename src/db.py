@@ -48,29 +48,108 @@ def _mark_sqlite_fallback(exc: Exception) -> None:
 
 def _get_active_engine(db_path: Path | str | None = None) -> tuple[str, dict[str, Any]]:
     """Determine whether to use MySQL or SQLite based on configuration and arguments."""
+    import os
+
     if db_path is not None:
         return "sqlite", {"path": Path(db_path)}
 
     if ACTIVE_ENGINE == "sqlite":
         return "sqlite", {"path": DB_PATH}
 
+    supabase_dsn = (os.environ.get("SUPABASE_DB_URL") or os.environ.get("DATABASE_URL") or "").strip()
+    if supabase_dsn:
+        return "mysql", {"dsn": supabase_dsn, "is_postgres": True}
+
     try:
         from src.config import load_config
         cfg = load_config()
-        if cfg.database.engine == "mysql":
-            return "mysql", cfg.database.mysql
+        if cfg.database.engine in ("postgres", "postgresql", "supabase"):
+            dsn = cfg.database.mysql.get("dsn") or supabase_dsn
+            return "mysql", {"dsn": dsn, "is_postgres": True}
+        elif cfg.database.engine == "mysql":
+            mysql_conf = dict(cfg.database.mysql)
+            mysql_conf["host"] = os.environ.get("MYSQL_HOST") or os.environ.get("MYSQLHOST") or mysql_conf.get("host", "127.0.0.1")
+            mysql_conf["port"] = int(os.environ.get("MYSQL_PORT") or os.environ.get("MYSQLPORT") or mysql_conf.get("port", 3306))
+            mysql_conf["user"] = os.environ.get("MYSQL_USER") or os.environ.get("MYSQLUSER") or mysql_conf.get("user", "root")
+            if "MYSQL_PASSWORD" in os.environ or "MYSQLPASSWORD" in os.environ:
+                mysql_conf["password"] = os.environ.get("MYSQL_PASSWORD") or os.environ.get("MYSQLPASSWORD") or ""
+            mysql_conf["database"] = os.environ.get("MYSQL_DATABASE") or os.environ.get("MYSQLDATABASE") or mysql_conf.get("database", "bantaynet_db")
+            return "mysql", mysql_conf
         else:
             return "sqlite", {"path": PROJECT_ROOT / cfg.database.sqlite.get("path", "bantaynet.db")}
     except Exception:
         return "mysql", DEFAULT_MYSQL_CONFIG
 
 
+class _PostgresCursorWrapper:
+    """Adapter around psycopg2 RealDictCursor providing PyMySQL DictCursor compatibility (including lastrowid)."""
+
+    def __init__(self, raw_cursor: Any) -> None:
+        self._cur = raw_cursor
+        self.lastrowid: int = 0
+
+    def execute(self, sql: str, params: Any = None) -> Any:
+        stripped = sql.strip().rstrip(";")
+        upper = stripped.upper()
+        is_insert_returning = upper.startswith("INSERT INTO") and "RETURNING" not in upper and "ON CONFLICT" not in upper
+        if is_insert_returning:
+            stripped = f"{stripped} RETURNING id"
+        res = self._cur.execute(stripped, params)
+        if is_insert_returning:
+            row = self._cur.fetchone()
+            if row and "id" in row:
+                self.lastrowid = int(row["id"])
+        return res
+
+    def fetchone(self) -> dict[str, Any] | None:
+        row = self._cur.fetchone()
+        return dict(row) if row is not None else None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._cur.fetchall()]
+
+    def __enter__(self) -> "_PostgresCursorWrapper":
+        self._cur.__enter__()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self._cur.__exit__(exc_type, exc_val, exc_tb)
+
+
+class _PostgresConnectionWrapper:
+    """Adapter around psycopg2 connection matching PyMySQL's cursor context manager."""
+
+    def __init__(self, raw_conn: Any, cursor_factory: Any) -> None:
+        self._conn = raw_conn
+        self._cursor_factory = cursor_factory
+
+    def cursor(self) -> _PostgresCursorWrapper:
+        return _PostgresCursorWrapper(self._conn.cursor(cursor_factory=self._cursor_factory))
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def get_postgres_connection(dsn: str) -> _PostgresConnectionWrapper:
+    """Connect to Supabase / PostgreSQL using a connection URI (SUPABASE_DB_URL / DATABASE_URL)."""
+    import psycopg2
+    import psycopg2.extras
+
+    if not dsn:
+        raise ValueError("PostgreSQL / Supabase connection URL (SUPABASE_DB_URL) is empty")
+    raw_conn = psycopg2.connect(dsn, connect_timeout=5)
+    raw_conn.autocommit = True
+    return _PostgresConnectionWrapper(raw_conn, psycopg2.extras.RealDictCursor)
+
 
 def get_mysql_connection(config: dict[str, Any] | None = None):
+    c = config or DEFAULT_MYSQL_CONFIG
+    if c.get("is_postgres") or c.get("dsn"):
+        return get_postgres_connection(str(c.get("dsn") or ""))
+
     import pymysql
     import pymysql.cursors
 
-    c = config or DEFAULT_MYSQL_CONFIG
     # First ensure database exists
     root_conn = pymysql.connect(
         host=c.get("host", "127.0.0.1"),
@@ -107,7 +186,71 @@ def get_sqlite_connection(db_path: Path | str | None = None) -> sqlite3.Connecti
 def init_db(db_path: Path | str | None = None) -> str:
     """Initialize alerts table on the active database engine."""
     engine, conf = _get_active_engine(db_path)
-    if engine == "mysql":
+    if engine == "mysql" and conf.get("is_postgres"):
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS alerts (
+                        id SERIAL PRIMARY KEY,
+                        detected_at VARCHAR(64) NOT NULL,
+                        packet_time VARCHAR(64) NOT NULL,
+                        rule VARCHAR(64) NOT NULL,
+                        severity VARCHAR(32) NOT NULL,
+                        src_ip VARCHAR(64) NOT NULL,
+                        dst_ip VARCHAR(64),
+                        dst_port VARCHAR(64),
+                        protocol VARCHAR(32),
+                        description TEXT,
+                        evidence_file VARCHAR(512),
+                        source_pcap VARCHAR(256),
+                        packet_count INT DEFAULT 1,
+                        details_json TEXT,
+                        status VARCHAR(32) DEFAULT 'new',
+                        analyst_note TEXT,
+                        updated_at VARCHAR(64),
+                        client_name VARCHAR(128) DEFAULT 'Default'
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_rule ON alerts(rule);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_src ON alerts(src_ip);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);")
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        username VARCHAR(64) NOT NULL UNIQUE,
+                        password_hash VARCHAR(256) NOT NULL,
+                        role VARCHAR(32) NOT NULL DEFAULT 'viewer',
+                        created_at VARCHAR(64) NOT NULL
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS audit_logs (
+                        id SERIAL PRIMARY KEY,
+                        timestamp VARCHAR(64) NOT NULL,
+                        username VARCHAR(64) NOT NULL,
+                        action VARCHAR(64) NOT NULL,
+                        target VARCHAR(256),
+                        details TEXT
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);")
+            conn.close()
+            _seed_default_users("mysql", conf)
+            return "postgres"
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    elif engine == "mysql":
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:

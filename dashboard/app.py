@@ -168,8 +168,11 @@ def apply_security_headers(response: Response) -> Response:
 @app.context_processor
 def inject_global_data():
     from src.db import _get_active_engine, ACTIVE_ENGINE
-    engine, _ = _get_active_engine()
-    engine_name = "MySQL (XAMPP)" if engine == "mysql" and ACTIVE_ENGINE != "sqlite" else "SQLite Fallback"
+    engine, conf = _get_active_engine()
+    if engine == "mysql" and ACTIVE_ENGINE != "sqlite":
+        engine_name = "Supabase (PostgreSQL)" if conf.get("is_postgres") else "MySQL (XAMPP)"
+    else:
+        engine_name = "SQLite Fallback"
     return {
         "db_engine_name": engine_name,
         "current_user": getattr(g, "current_user", None),
@@ -882,7 +885,7 @@ def _list_pcap_directory(directory: Path) -> list[dict[str, object]]:
 @role_required("admin")
 def manage_storage():
     """IT Administrator view to manage the database and stored evidence/capture files."""
-    cfg = load_config()
+    cfg = load_config(DEFAULT_RULES_PATH)
     evidence_dir = PROJECT_ROOT / cfg.evidence.output_dir
     stats = get_summary_stats()
     evidence_files = _list_pcap_directory(evidence_dir)
@@ -904,7 +907,7 @@ def admin_clear_database():
     clear_alerts()
     removed_files = 0
     if purge_evidence:
-        cfg = load_config()
+        cfg = load_config(DEFAULT_RULES_PATH)
         evidence_dir = PROJECT_ROOT / cfg.evidence.output_dir
         if evidence_dir.is_dir():
             for f in evidence_dir.iterdir():

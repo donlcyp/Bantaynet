@@ -12,6 +12,8 @@ def clean_test_environment(monkeypatch):
     monkeypatch.setenv("BANTAYNET_VIEWER_PASSWORD", "viewer123!")
     # Disable secure cookies in test runner so session cookies work over plain HTTP test client
     monkeypatch.setenv("BANTAYNET_COOKIE_SECURE", "0")
+    monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     from dashboard.app import app
     app.config["FORCE_AUTH_TESTING"] = False
     app.config["FORCE_CSRF_TESTING"] = False
