@@ -11,6 +11,32 @@
 
 ---
 
+<<<<<<< HEAD
+## 📖 Overview
+
+**BantayNet** is a rule-based network intrusion detection and forensics system built for IT administrators and security analysts. It parses Wireshark captures (`.pcap` / `.pcapng`), correlates anomalies across sliding time windows, and generates actionable security alerts mapped to MITRE ATT&CK techniques.
+
+### Core Features:
+- **7 Detection Techniques:** Fast scans, slow scans, host sweeps, SYN floods, stealth flags, cleartext traffic, and ICMP floods.
+- **Forensic Evidence Snippets:** Automatically isolates and exports mini-PCAP snippets containing only the offending packets.
+- **Executive & Technical PDF Reports:** One-click generation of audit-ready summary and incident dossiers.
+- **Dual Database Engine:** Connects to XAMPP MySQL/MariaDB with automatic zero-configuration fallback to SQLite (`bantaynet.db`).
+- **Web & CLI Interfaces:** Manage triage via a modern web dashboard or run offline scans directly from the terminal.
+
+=======
+## 📋 Project Information
+
+| Detail | Description |
+|---|---|
+| **Author / Proponent** | **Donyl Cyprus R. Basio** |
+| **Subject** | System Administration and Maintenance – IT23/L |
+| **Course Code** | 3493 |
+| **Schedule** | 7:30 PM – 9:30 PM |
+| **Project Title** | Project #4 — IntrusionAlert: Suspicious Activity Detection System |
+| **Company / Institution** | IT Services |
+
+---
+
 ## 📖 Overview
 
 **BantayNet** is a rule-based network intrusion detection and forensics system built for IT administrators and security analysts. It parses Wireshark captures (`.pcap` / `.pcapng`), correlates anomalies across sliding time windows, and generates actionable security alerts mapped to MITRE ATT&CK techniques.
@@ -24,9 +50,26 @@
 
 ---
 
+## 🔑 Default Login Credentials
+
+BantayNet includes built-in role-based access control (RBAC):
+
+| Role | Username | Password | Access Level |
+|---|---|---|---|
+| **Administrator** | `admin` | `admin123!` | Full control: user management, triage, exports, and rule configuration |
+| **Security Analyst** | `analyst` | `analyst123!` | Incident triage, PCAP uploads, evidence downloads, and PDF/CSV exports |
+| **Viewer** | `viewer` | `viewer123!` | Read-only access to metrics, alert summaries, and incident lists |
+
+>>>>>>> a417b59920843f02c3061a609b85a18e7f89de4b
+---
+
 ## 🎯 Detection Rules & MITRE ATT&CK Mapping
 
+<<<<<<< HEAD
 Configured via [`rules/rules.yaml`](rules/rules.yaml):
+=======
+Configured via [`rules/rules.yaml`](file:///home/donylcb/Documents/Code/Bantaynet/rules/rules.yaml):
+>>>>>>> a417b59920843f02c3061a609b85a18e7f89de4b
 
 | Rule | Description | Trigger Threshold | MITRE ATT&CK |
 |---|---|---|---|
@@ -84,7 +127,11 @@ python -m dashboard.app
 ```bash
 python wsgi.py
 ```
+<<<<<<< HEAD
 Open **http://127.0.0.1:5000** in your browser.
+=======
+Open **http://127.0.0.1:5000** in your browser and sign in using `admin` / `admin123!`.
+>>>>>>> a417b59920843f02c3061a609b85a18e7f89de4b
 
 #### Dashboard Capabilities:
 - **Upload PCAPs:** Drag-and-drop `.pcap` or `.pcapng` files for instant analysis.
@@ -120,4 +167,8 @@ Execute the automated test suite:
 ```bash
 pytest -v
 ```
+<<<<<<< HEAD
 All 98 unit and integration tests verify rule algorithms, thresholds, database operations, RBAC permissions, and evidence carving.
+=======
+All 97 unit and integration tests verify rule algorithms, thresholds, database operations, RBAC permissions, and evidence carving.
+>>>>>>> a417b59920843f02c3061a609b85a18e7f89de4b
