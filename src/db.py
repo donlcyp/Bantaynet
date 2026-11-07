@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from src.mitre import attach_mitre_info
+from src.security import EMAIL_REGEX
 from werkzeug.security import check_password_hash, generate_password_hash
 
 logger = logging.getLogger("bantaynet.db")
@@ -222,13 +224,19 @@ def init_db(db_path: Path | str | None = None) -> str:
                     CREATE TABLE IF NOT EXISTS users (
                         id SERIAL PRIMARY KEY,
                         username VARCHAR(64) NOT NULL UNIQUE,
+                        email VARCHAR(128) UNIQUE,
                         password_hash VARCHAR(256) NOT NULL,
                         role VARCHAR(32) NOT NULL DEFAULT 'viewer',
                         created_at VARCHAR(64) NOT NULL
                     );
                     """
                 )
+                try:
+                    cur.execute("ALTER TABLE users ADD COLUMN email VARCHAR(128) UNIQUE;")
+                except Exception:
+                    pass
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -294,13 +302,19 @@ def init_db(db_path: Path | str | None = None) -> str:
                     CREATE TABLE IF NOT EXISTS users (
                         id INT AUTO_INCREMENT PRIMARY KEY,
                         username VARCHAR(64) NOT NULL UNIQUE,
+                        email VARCHAR(128) UNIQUE,
                         password_hash VARCHAR(256) NOT NULL,
                         role VARCHAR(32) NOT NULL DEFAULT 'viewer',
                         created_at VARCHAR(64) NOT NULL,
-                        INDEX idx_users_username (username)
+                        INDEX idx_users_username (username),
+                        INDEX idx_users_email (email)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                     """
                 )
+                try:
+                    cur.execute("ALTER TABLE users ADD COLUMN email VARCHAR(128) UNIQUE;")
+                except Exception:
+                    pass
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -371,13 +385,18 @@ def init_db(db_path: Path | str | None = None) -> str:
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
+                email TEXT UNIQUE,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'viewer',
                 created_at TEXT NOT NULL
             );
             """
         )
+        existing_user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "email" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT;")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
 
         conn.execute(
             """
@@ -414,6 +433,7 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
         "admin": {
             "id": -1,
             "username": "admin",
+            "email": "admin@bantaynet.local",
             "password": admin_pwd,
             "role": "admin",
             "created_at": "2026-01-01T00:00:00Z",
@@ -422,6 +442,7 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
         "analyst": {
             "id": -2,
             "username": "analyst",
+            "email": "analyst@bantaynet.local",
             "password": analyst_pwd,
             "role": "analyst",
             "created_at": "2026-01-01T00:00:00Z",
@@ -430,6 +451,7 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
         "viewer": {
             "id": -3,
             "username": "viewer",
+            "email": "viewer@bantaynet.local",
             "password": viewer_pwd,
             "role": "viewer",
             "created_at": "2026-01-01T00:00:00Z",
@@ -456,9 +478,15 @@ def create_user(
     username: str,
     password: str,
     role: str = "viewer",
+    email: str | None = None,
     db_path: Path | str | None = None,
 ) -> int:
     """Create a new user with hashed credentials. Raises ValueError if invalid."""
+    # Defensive support for legacy callers passing db_path as 4th positional argument
+    if isinstance(email, Path) or (isinstance(email, str) and ("/" in email or "\\" in email or email.endswith(".db"))):
+        db_path = email
+        email = None
+
     username = (username or "").strip().lower()
     if not username:
         raise ValueError("Username cannot be empty")
@@ -468,9 +496,21 @@ def create_user(
     if not password:
         raise ValueError("Password cannot be empty")
 
+    clean_email: str | None = None
+    if email is not None and str(email).strip():
+        clean_email = str(email).strip().lower()
+        if len(clean_email) > 128 or not EMAIL_REGEX.match(clean_email):
+            raise ValueError(f"Invalid email address format: '{email}'")
+
     # Guard: prevent colliding with in-memory virtual test accounts
-    if username in _get_static_test_accounts():
+    static_accounts = _get_static_test_accounts()
+    if username in static_accounts:
         raise ValueError(f"Username '{username}' already exists (reserved system account)")
+
+    if clean_email:
+        for v in static_accounts.values():
+            if v.get("email", "").lower() == clean_email:
+                raise ValueError(f"Email '{clean_email}' already exists (reserved system account)")
 
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
@@ -484,9 +524,13 @@ def create_user(
                 cur.execute("SELECT id FROM users WHERE LOWER(username) = %s", (username,))
                 if cur.fetchone():
                     raise ValueError(f"Username '{username}' already exists")
+                if clean_email:
+                    cur.execute("SELECT id FROM users WHERE LOWER(email) = %s", (clean_email,))
+                    if cur.fetchone():
+                        raise ValueError(f"Email '{clean_email}' already exists")
                 cur.execute(
-                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s)",
-                    (username, pwd_hash, role, now_str),
+                    "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s)",
+                    (username, clean_email, pwd_hash, role, now_str),
                 )
                 last_id = cur.lastrowid
             conn.close()
@@ -496,6 +540,8 @@ def create_user(
                 raise
             err_str = str(exc).lower()
             if "unique" in err_str or "duplicate" in err_str or "already exists" in err_str:
+                if "email" in err_str:
+                    raise ValueError(f"Email '{clean_email}' already exists") from exc
                 raise ValueError(f"Username '{username}' already exists") from exc
             _mark_sqlite_fallback(exc)
 
@@ -503,28 +549,34 @@ def create_user(
         existing = conn.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username,)).fetchone()
         if existing:
             raise ValueError(f"Username '{username}' already exists")
+        if clean_email:
+            existing_email = conn.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,)).fetchone()
+            if existing_email:
+                raise ValueError(f"Email '{clean_email}' already exists")
         try:
             cursor = conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                (username, pwd_hash, role, now_str),
+                "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+                (username, clean_email, pwd_hash, role, now_str),
             )
             conn.commit()
             return int(cursor.lastrowid)
-        except sqlite3.IntegrityError:
-            raise ValueError(f"Username '{username}' already exists")
+        except sqlite3.IntegrityError as exc:
+            if "email" in str(exc).lower():
+                raise ValueError(f"Email '{clean_email}' already exists") from exc
+            raise ValueError(f"Username '{username}' already exists") from exc
 
 
 def authenticate_user(
-    username: str,
+    identifier: str,
     password: str,
     db_path: Path | str | None = None,
 ) -> dict[str, Any] | None:
-    """Validate username and password. Returns user dict (without password_hash) if successful, else None."""
-    username = (username or "").strip().lower()
-    if not username or not password:
+    """Validate username or email alongside password (hybrid login). Returns user dict without password_hash."""
+    identifier = (identifier or "").strip().lower()
+    if not identifier or not password:
         return None
 
-    # 1. First check if real database contains this account
+    # 1. First check if real database contains this account by username OR email
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
@@ -533,7 +585,10 @@ def authenticate_user(
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+                cur.execute(
+                    "SELECT * FROM users WHERE LOWER(username) = %s OR LOWER(COALESCE(email, '')) = %s",
+                    (identifier, identifier),
+                )
                 user_row = cur.fetchone()
             conn.close()
         except Exception as exc:
@@ -541,7 +596,10 @@ def authenticate_user(
 
     if user_row is None and (engine == "sqlite" or ACTIVE_ENGINE == "sqlite"):
         with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-            row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM users WHERE LOWER(username) = ? OR LOWER(COALESCE(email, '')) = ?",
+                (identifier, identifier),
+            ).fetchone()
             if row:
                 user_row = dict(row)
 
@@ -553,15 +611,15 @@ def authenticate_user(
             return user
         return None
 
-    # 2. In-memory virtual test account check (never stored in database)
+    # 2. In-memory virtual test account check (matches username or email)
     static_users = _get_static_test_accounts()
-    if username in static_users:
-        target = static_users[username]
-        # Match against either plaintext env password or hashed equivalent
-        if password == target["password"] or check_password_hash(generate_password_hash(target["password"]), password):
-            u_copy = dict(target)
-            u_copy.pop("password", None)
-            return u_copy
+    for target in static_users.values():
+        if target["username"].lower() == identifier or target.get("email", "").lower() == identifier:
+            # Match against either plaintext env password or hashed equivalent
+            if password == target["password"] or check_password_hash(generate_password_hash(target["password"]), password):
+                u_copy = dict(target)
+                u_copy.pop("password", None)
+                return u_copy
 
     return None
 
@@ -582,7 +640,7 @@ def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str,
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id, username, role, created_at FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT id, username, email, role, created_at FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
             conn.close()
             return dict(row) if row else None
@@ -590,7 +648,7 @@ def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str,
             _mark_sqlite_fallback(exc)
 
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        row = conn.execute("SELECT id, username, role, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT id, username, email, role, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
         return dict(row) if row else None
 
 
@@ -614,7 +672,7 @@ def get_user_by_username(username: str, db_path: Path | str | None = None) -> di
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id, username, role, created_at FROM users WHERE LOWER(username) = %s", (username,))
+                cur.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(username) = %s", (username,))
                 row = cur.fetchone()
             conn.close()
             return dict(row) if row else None
@@ -622,7 +680,39 @@ def get_user_by_username(username: str, db_path: Path | str | None = None) -> di
             _mark_sqlite_fallback(exc)
 
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        row = conn.execute("SELECT id, username, role, created_at FROM users WHERE LOWER(username) = ?", (username,)).fetchone()
+        row = conn.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(username) = ?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_user_by_email(email: str, db_path: Path | str | None = None) -> dict[str, Any] | None:
+    """Retrieve user by email without password_hash (case-insensitive)."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+
+    # Check in-memory virtual test accounts
+    for target in _get_static_test_accounts().values():
+        if target.get("email", "").lower() == email:
+            u_copy = dict(target)
+            u_copy.pop("password", None)
+            return u_copy
+
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(email) = %s", (email,))
+                row = cur.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        row = conn.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(email) = ?", (email,)).fetchone()
         return dict(row) if row else None
 
 
@@ -636,7 +726,7 @@ def get_all_users(db_path: Path | str | None = None) -> list[dict[str, Any]]:
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id, username, role, created_at FROM users ORDER BY id ASC")
+                cur.execute("SELECT id, username, email, role, created_at FROM users ORDER BY id ASC")
                 db_rows = [dict(r) for r in cur.fetchall()]
             conn.close()
         except Exception as exc:
@@ -644,11 +734,18 @@ def get_all_users(db_path: Path | str | None = None) -> list[dict[str, Any]]:
 
     if not db_rows and (engine == "sqlite" or ACTIVE_ENGINE == "sqlite"):
         with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-            db_rows = [dict(r) for r in conn.execute("SELECT id, username, role, created_at FROM users ORDER BY id ASC").fetchall()]
+            db_rows = [dict(r) for r in conn.execute("SELECT id, username, email, role, created_at FROM users ORDER BY id ASC").fetchall()]
 
     existing_usernames = {r["username"] for r in db_rows}
     # Append virtual test accounts only if not already registered in DB
     result = list(db_rows)
+    for v in _get_static_test_accounts().values():
+        if v["username"] not in existing_usernames:
+            v_copy = dict(v)
+            v_copy.pop("password", None)
+            result.append(v_copy)
+
+    return result
     for v in _get_static_test_accounts().values():
         if v["username"] not in existing_usernames:
             v_copy = dict(v)

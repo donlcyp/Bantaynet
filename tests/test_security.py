@@ -298,6 +298,86 @@ def test_duplicate_account_creation_prevention(test_app_client, tmp_path):
     assert get_user_by_username("completely_nonexistent_user_xyz", db_path=test_db) is None
 
 
+def test_hybrid_login_virtual_accounts(test_app_client):
+    """Verify hybrid login allows authentication using either username or email for system accounts."""
+    from src.db import authenticate_user
+
+    # 1. Admin login by username and by email
+    assert authenticate_user("admin", "admin123!") is not None
+    assert authenticate_user("admin@bantaynet.local", "admin123!") is not None
+    assert authenticate_user("ADMIN@BANTAYNET.LOCAL", "admin123!") is not None
+
+    # 2. Analyst login by username and by email
+    assert authenticate_user("analyst", "analyst123!") is not None
+    assert authenticate_user("analyst@bantaynet.local", "analyst123!") is not None
+
+    # 3. Viewer login by username and by email
+    assert authenticate_user("viewer", "viewer123!") is not None
+    assert authenticate_user("viewer@bantaynet.local", "viewer123!") is not None
+
+    # 4. HTTP client login flow using email
+    res = test_app_client.post(
+        "/login",
+        data={"username": "admin@bantaynet.local", "password": "admin123!"},
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+    assert b"Logged in successfully as admin" in res.data
+
+
+def test_hybrid_login_database_user(tmp_path):
+    """Verify database accounts can be created with email and logged into using username or email."""
+    from src.db import authenticate_user, create_user, get_user_by_email
+
+    test_db = tmp_path / "test_hybrid_db.db"
+
+    uid = create_user("soc_ranger", "RangerPass123!", "analyst", email="ranger@cybersecurity.gov", db_path=test_db)
+    assert uid > 0
+
+    # Retrieve by email
+    user = get_user_by_email("ranger@cybersecurity.gov", db_path=test_db)
+    assert user is not None
+    assert user["username"] == "soc_ranger"
+    assert user["email"] == "ranger@cybersecurity.gov"
+
+    # Authenticate by username
+    user_by_user = authenticate_user("soc_ranger", "RangerPass123!", db_path=test_db)
+    assert user_by_user is not None
+    assert user_by_user["id"] == uid
+
+    # Authenticate by email (case-insensitive)
+    user_by_email = authenticate_user("RANGER@CYBERSECURITY.GOV", "RangerPass123!", db_path=test_db)
+    assert user_by_email is not None
+    assert user_by_email["id"] == uid
+
+
+def test_email_validation_and_duplicate_prevention(tmp_path):
+    """Verify system enforces email format standards and prevents duplicate emails."""
+    from src.db import create_user
+
+    test_db = tmp_path / "test_email_dup.db"
+
+    # 1. Invalid email format must be rejected
+    with pytest.raises(ValueError, match="Invalid email address format"):
+        create_user("bad_email_user", "ValidPass123!", "viewer", email="notanemail", db_path=test_db)
+
+    # 2. Colliding with reserved system account email must be rejected
+    with pytest.raises(ValueError, match="already exists"):
+        create_user("imposter_admin", "ValidPass123!", "viewer", email="admin@bantaynet.local", db_path=test_db)
+
+    # 3. Create initial valid user with email
+    create_user("user_one", "ValidPass123!", "viewer", email="first_operator@soc.corp", db_path=test_db)
+
+    # 4. Attempting to create another user with same email must be rejected
+    with pytest.raises(ValueError, match="already exists"):
+        create_user("user_two", "ValidPass123!", "viewer", email="first_operator@soc.corp", db_path=test_db)
+
+    # 5. Case-insensitive duplicate email check
+    with pytest.raises(ValueError, match="already exists"):
+        create_user("user_three", "ValidPass123!", "viewer", email="FIRST_OPERATOR@SOC.CORP", db_path=test_db)
+
+
+
 
 
 

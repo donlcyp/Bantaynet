@@ -69,6 +69,23 @@ def validate_password_standards(password: str, username: str = "") -> list[str]:
     return errors
 
 
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+
+
+def validate_email_standards(email: str, required: bool = True) -> list[str]:
+    """Validate email address against security and formatting standards."""
+    clean = (email or "").strip()
+    if not clean:
+        return ["Email address cannot be empty."] if required else []
+    errors: list[str] = []
+    if len(clean) > 128:
+        errors.append("Email address cannot exceed 128 characters.")
+    if not EMAIL_REGEX.match(clean):
+        errors.append("Invalid email address format (e.g. operator@company.com).")
+    return errors
+
+
+
 def validate_username_standards(username: str) -> list[str]:
     """Validate username against naming standards."""
     errors: list[str] = []

@@ -59,6 +59,7 @@ from src.db import (
     get_audit_logs,
     get_chart_data,
     get_summary_stats,
+    get_user_by_email,
     get_user_by_id,
     get_user_by_username,
     init_db,
@@ -68,7 +69,7 @@ from src.db import (
 )
 from src.export import write_alerts_csv
 from src.report_pdf import generate_alert_pdf, generate_summary_pdf
-from src.security import validate_password_standards, validate_username_standards
+from src.security import validate_email_standards, validate_password_standards, validate_username_standards
 from src.store import store_alerts
 
 app = Flask(
@@ -305,7 +306,7 @@ def login():
     next_url = raw_next if is_safe_url(raw_next) else url_for("index")
 
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        username = (request.form.get("username") or request.form.get("identifier") or "").strip()
         password = request.form.get("password", "")
         client_ip = request.remote_addr or "127.0.0.1"
 
@@ -315,8 +316,8 @@ def login():
             return render_template("login.html", next=next_url), 400
 
         # 2. Error checking: Input bounds (prevent memory/buffer exhaustion)
-        if len(username) > 64 or len(password) > 128:
-            flash("Authentication error: Input exceeds allowed credential limits (max 64 username, 128 password).", "error")
+        if len(username) > 128 or len(password) > 128:
+            flash("Authentication error: Input exceeds allowed credential limits (max 128 username/email, 128 password).", "error")
             return render_template("login.html", next=next_url), 400
 
         # 3. Error checking: Rate limiting lockout check
@@ -346,7 +347,7 @@ def login():
         else:
             record_login_failure(client_ip, username)
             app.logger.warning(f"Failed authentication attempt for '{username}' from {client_ip}")
-            log_audit_event("anonymous", "failed_login", f"IP: {client_ip}", f"Attempted username: {username}")
+            log_audit_event("anonymous", "failed_login", f"IP: {client_ip}", f"Attempted identifier: {username}")
             flash("Authentication error: Invalid username or password. Please verify credentials.", "error")
 
     return render_template("login.html", next=next_url)
@@ -387,6 +388,7 @@ def manage_users():
 @role_required("admin")
 def add_user():
     username = request.form.get("username", "").strip()
+    email = (request.form.get("email") or "").strip().lower() or None
     password = request.form.get("password", "")
     confirm_password = request.form.get("confirm_password", "")
     role = request.form.get("role", "viewer").strip().lower()
@@ -398,28 +400,43 @@ def add_user():
             flash(f"Username error: {err}", "error")
         return redirect(url_for("manage_users"))
 
-    # 2. Error checking: Password confirmation match
+    # 2. Error checking: Email format standards (if provided)
+    if email:
+        email_errors = validate_email_standards(email)
+        if email_errors:
+            for err in email_errors:
+                flash(f"Email error: {err}", "error")
+            return redirect(url_for("manage_users"))
+
+    # 3. Error checking: Password confirmation match
     if confirm_password and password != confirm_password:
         flash("Password error: Password confirmation does not match.", "error")
         return redirect(url_for("manage_users"))
 
-    # 3. Error checking: Comprehensive NIST/OWASP password standards
+    # 4. Error checking: Comprehensive NIST/OWASP password standards
     pwd_errors = validate_password_standards(password, username)
     if pwd_errors:
         for err in pwd_errors:
             flash(f"Password standards error: {err}", "error")
         return redirect(url_for("manage_users"))
 
-    # 4. Error checking: Prevent duplicate / double account creation
+    # 5. Error checking: Prevent duplicate / double account creation
     existing_user = get_user_by_username(username)
     if existing_user is not None:
         flash(f"Account creation failed: An account with username '{username}' already exists. Usernames must be unique.", "error")
         return redirect(url_for("manage_users"))
 
+    if email:
+        existing_email_user = get_user_by_email(email)
+        if existing_email_user is not None:
+            flash(f"Account creation failed: An account with email '{email}' already exists. Email addresses must be unique.", "error")
+            return redirect(url_for("manage_users"))
+
     try:
-        create_user(username, password, role)
+        create_user(username, password, role=role, email=email)
         admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
-        log_audit_event(admin_user, "create_user", f"User '{username}'", f"Role: {role}")
+        email_info = f", Email: {email}" if email else ""
+        log_audit_event(admin_user, "create_user", f"User '{username}'", f"Role: {role}{email_info}")
         flash(f"User '{username}' created successfully with {role.title()} role.", "success")
     except ValueError as exc:
         flash(f"Account creation failed: {exc}", "error")
@@ -742,7 +759,9 @@ def alert_report_pdf(alert_id: int):
             from scapy.layers.inet import ICMP, IP, TCP, UDP
             from scapy.utils import PcapReader
 
-            with PcapReader(str(evidence_path)) as reader:
+            reader = None
+            try:
+                reader = PcapReader(str(evidence_path))
                 first_ts = None
                 for idx, pkt in enumerate(reader):
                     if idx >= 50:
@@ -774,6 +793,14 @@ def alert_report_pdf(alert_id: int):
                             "len": len(pkt),
                         }
                     )
+            finally:
+                if reader is not None:
+                    try:
+                        reader.close()
+                    except Exception:
+                        pass
+                import gc
+                gc.collect()
         except Exception as e:
             app.logger.warning(f"Could not parse evidence PCAP {evidence_path}: {e}")
 
@@ -971,6 +998,8 @@ def admin_clear_database():
     clear_alerts()
     removed_files = 0
     if purge_evidence:
+        import gc
+        gc.collect()
         cfg = load_config(DEFAULT_RULES_PATH)
         evidence_dir = (Path(PROJECT_ROOT) / cfg.evidence.output_dir).resolve()
         if not evidence_dir.is_dir():
