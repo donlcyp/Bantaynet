@@ -227,12 +227,27 @@ def init_db(db_path: Path | str | None = None) -> str:
                         email VARCHAR(128) UNIQUE,
                         password_hash VARCHAR(256) NOT NULL,
                         role VARCHAR(32) NOT NULL DEFAULT 'viewer',
-                        created_at VARCHAR(64) NOT NULL
+                        created_at VARCHAR(64) NOT NULL,
+                        is_2fa_enabled INT DEFAULT 0,
+                        backup_codes TEXT,
+                        must_change_password INT DEFAULT 0
                     );
                     """
                 )
                 try:
                     cur.execute("ALTER TABLE users ADD COLUMN email VARCHAR(128) UNIQUE;")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE users ADD COLUMN is_2fa_enabled INT DEFAULT 0;")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE users ADD COLUMN backup_codes TEXT;")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE users ADD COLUMN must_change_password INT DEFAULT 0;")
                 except Exception:
                     pass
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
@@ -306,15 +321,24 @@ def init_db(db_path: Path | str | None = None) -> str:
                         password_hash VARCHAR(256) NOT NULL,
                         role VARCHAR(32) NOT NULL DEFAULT 'viewer',
                         created_at VARCHAR(64) NOT NULL,
+                        is_2fa_enabled INT DEFAULT 0,
+                        backup_codes TEXT,
+                        must_change_password INT DEFAULT 0,
                         INDEX idx_users_username (username),
                         INDEX idx_users_email (email)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                     """
                 )
-                try:
-                    cur.execute("ALTER TABLE users ADD COLUMN email VARCHAR(128) UNIQUE;")
-                except Exception:
-                    pass
+                for col_sql in [
+                    "ALTER TABLE users ADD COLUMN email VARCHAR(128) UNIQUE;",
+                    "ALTER TABLE users ADD COLUMN is_2fa_enabled INT DEFAULT 0;",
+                    "ALTER TABLE users ADD COLUMN backup_codes TEXT;",
+                    "ALTER TABLE users ADD COLUMN must_change_password INT DEFAULT 0;",
+                ]:
+                    try:
+                        cur.execute(col_sql)
+                    except Exception:
+                        pass
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -388,13 +412,22 @@ def init_db(db_path: Path | str | None = None) -> str:
                 email TEXT UNIQUE,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'viewer',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                is_2fa_enabled INTEGER DEFAULT 0,
+                backup_codes TEXT,
+                must_change_password INTEGER DEFAULT 0
             );
             """
         )
         existing_user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
         if "email" not in existing_user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN email TEXT;")
+        if "is_2fa_enabled" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN is_2fa_enabled INTEGER DEFAULT 0;")
+        if "backup_codes" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN backup_codes TEXT;")
+        if "must_change_password" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0;")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
 
@@ -438,6 +471,9 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
             "role": "admin",
             "created_at": "2026-01-01T00:00:00Z",
             "is_virtual": True,
+            "is_2fa_enabled": False,
+            "backup_codes": "",
+            "must_change_password": False,
         },
         "analyst": {
             "id": -2,
@@ -447,6 +483,9 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
             "role": "analyst",
             "created_at": "2026-01-01T00:00:00Z",
             "is_virtual": True,
+            "is_2fa_enabled": False,
+            "backup_codes": "",
+            "must_change_password": False,
         },
         "viewer": {
             "id": -3,
@@ -456,6 +495,9 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
             "role": "viewer",
             "created_at": "2026-01-01T00:00:00Z",
             "is_virtual": True,
+            "is_2fa_enabled": False,
+            "backup_codes": "",
+            "must_change_password": False,
         },
     }
 
@@ -474,18 +516,34 @@ def _seed_default_users(engine: str, conf: dict[str, Any]) -> None:
     return
 
 
+def generate_backup_codes(count: int = 8) -> list[str]:
+    """Generate cryptographically secure single-use emergency backup codes."""
+    import secrets
+    codes = []
+    for _ in range(count):
+        raw = secrets.token_hex(4).upper()
+        codes.append(f"{raw[:4]}-{raw[4:]}")
+    return codes
+
+
 def create_user(
     username: str,
     password: str,
     role: str = "viewer",
     email: str | None = None,
+    must_change_password: bool = True,
+    is_2fa_enabled: bool = False,
+    backup_codes: list[str] | str | None = None,
     db_path: Path | str | None = None,
 ) -> int:
     """Create a new user with hashed credentials. Raises ValueError if invalid."""
-    # Defensive support for legacy callers passing db_path as 4th positional argument
+    # Defensive support for legacy callers passing db_path as 4th or 5th positional argument
     if isinstance(email, Path) or (isinstance(email, str) and ("/" in email or "\\" in email or email.endswith(".db"))):
         db_path = email
         email = None
+    if isinstance(must_change_password, (Path, str)) and (isinstance(must_change_password, Path) or "/" in str(must_change_password) or "\\" in str(must_change_password) or str(must_change_password).endswith(".db")):
+        db_path = must_change_password
+        must_change_password = True
 
     username = (username or "").strip().lower()
     if not username:
@@ -516,6 +574,9 @@ def create_user(
     engine, conf = _get_active_engine(db_path)
     pwd_hash = generate_password_hash(password)
     now_str = datetime.now(timezone.utc).isoformat()
+    codes_str = ",".join(backup_codes) if isinstance(backup_codes, list) else (backup_codes or "")
+    mcp_val = 1 if must_change_password else 0
+    tfa_val = 1 if is_2fa_enabled else 0
 
     if engine == "mysql":
         try:
@@ -529,8 +590,8 @@ def create_user(
                     if cur.fetchone():
                         raise ValueError(f"Email '{clean_email}' already exists")
                 cur.execute(
-                    "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s)",
-                    (username, clean_email, pwd_hash, role, now_str),
+                    "INSERT INTO users (username, email, password_hash, role, created_at, is_2fa_enabled, backup_codes, must_change_password) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (username, clean_email, pwd_hash, role, now_str, tfa_val, codes_str, mcp_val),
                 )
                 last_id = cur.lastrowid
             conn.close()
@@ -555,8 +616,8 @@ def create_user(
                 raise ValueError(f"Email '{clean_email}' already exists")
         try:
             cursor = conn.execute(
-                "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
-                (username, clean_email, pwd_hash, role, now_str),
+                "INSERT INTO users (username, email, password_hash, role, created_at, is_2fa_enabled, backup_codes, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (username, clean_email, pwd_hash, role, now_str, tfa_val, codes_str, mcp_val),
             )
             conn.commit()
             return int(cursor.lastrowid)
@@ -564,6 +625,19 @@ def create_user(
             if "email" in str(exc).lower():
                 raise ValueError(f"Email '{clean_email}' already exists") from exc
             raise ValueError(f"Username '{username}' already exists") from exc
+
+
+def _normalize_user_dict(d: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Normalize user dictionary fields ensuring consistent boolean and string representations."""
+    if not d:
+        return None
+    res = dict(d)
+    res.pop("password_hash", None)
+    res.pop("password", None)
+    res["is_2fa_enabled"] = bool(res.get("is_2fa_enabled"))
+    res["must_change_password"] = bool(res.get("must_change_password"))
+    res["backup_codes"] = res.get("backup_codes") or ""
+    return res
 
 
 def authenticate_user(
@@ -606,9 +680,7 @@ def authenticate_user(
     if user_row:
         stored_hash = user_row.get("password_hash") or ""
         if check_password_hash(stored_hash, password):
-            user = dict(user_row)
-            user.pop("password_hash", None)
-            return user
+            return _normalize_user_dict(user_row)
         return None
 
     # 2. In-memory virtual test account check (matches username or email)
@@ -617,9 +689,7 @@ def authenticate_user(
         if target["username"].lower() == identifier or target.get("email", "").lower() == identifier:
             # Match against either plaintext env password or hashed equivalent
             if password == target["password"] or check_password_hash(generate_password_hash(target["password"]), password):
-                u_copy = dict(target)
-                u_copy.pop("password", None)
-                return u_copy
+                return _normalize_user_dict(target)
 
     return None
 
@@ -629,9 +699,7 @@ def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str,
     # Check in-memory virtual test accounts
     for target in _get_static_test_accounts().values():
         if target["id"] == user_id:
-            u_copy = dict(target)
-            u_copy.pop("password", None)
-            return u_copy
+            return _normalize_user_dict(target)
 
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
@@ -640,16 +708,16 @@ def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str,
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id, username, email, role, created_at FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
             conn.close()
-            return dict(row) if row else None
+            return _normalize_user_dict(dict(row)) if row else None
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        row = conn.execute("SELECT id, username, email, role, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
-        return dict(row) if row else None
+        row = conn.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE id = ?", (user_id,)).fetchone()
+        return _normalize_user_dict(dict(row)) if row else None
 
 
 def get_user_by_username(username: str, db_path: Path | str | None = None) -> dict[str, Any] | None:
@@ -661,9 +729,7 @@ def get_user_by_username(username: str, db_path: Path | str | None = None) -> di
     # Check in-memory virtual test accounts
     static_users = _get_static_test_accounts()
     if username in static_users:
-        u_copy = dict(static_users[username])
-        u_copy.pop("password", None)
-        return u_copy
+        return _normalize_user_dict(static_users[username])
 
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
@@ -672,16 +738,16 @@ def get_user_by_username(username: str, db_path: Path | str | None = None) -> di
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(username) = %s", (username,))
+                cur.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE LOWER(username) = %s", (username,))
                 row = cur.fetchone()
             conn.close()
-            return dict(row) if row else None
+            return _normalize_user_dict(dict(row)) if row else None
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        row = conn.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(username) = ?", (username,)).fetchone()
-        return dict(row) if row else None
+        row = conn.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE LOWER(username) = ?", (username,)).fetchone()
+        return _normalize_user_dict(dict(row)) if row else None
 
 
 def get_user_by_email(email: str, db_path: Path | str | None = None) -> dict[str, Any] | None:
@@ -693,9 +759,7 @@ def get_user_by_email(email: str, db_path: Path | str | None = None) -> dict[str
     # Check in-memory virtual test accounts
     for target in _get_static_test_accounts().values():
         if target.get("email", "").lower() == email:
-            u_copy = dict(target)
-            u_copy.pop("password", None)
-            return u_copy
+            return _normalize_user_dict(target)
 
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
@@ -704,16 +768,16 @@ def get_user_by_email(email: str, db_path: Path | str | None = None) -> dict[str
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(email) = %s", (email,))
+                cur.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE LOWER(email) = %s", (email,))
                 row = cur.fetchone()
             conn.close()
-            return dict(row) if row else None
+            return _normalize_user_dict(dict(row)) if row else None
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        row = conn.execute("SELECT id, username, email, role, created_at FROM users WHERE LOWER(email) = ?", (email,)).fetchone()
-        return dict(row) if row else None
+        row = conn.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE LOWER(email) = ?", (email,)).fetchone()
+        return _normalize_user_dict(dict(row)) if row else None
 
 
 def get_all_users(db_path: Path | str | None = None) -> list[dict[str, Any]]:
@@ -726,26 +790,152 @@ def get_all_users(db_path: Path | str | None = None) -> list[dict[str, Any]]:
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id, username, email, role, created_at FROM users ORDER BY id ASC")
-                db_rows = [dict(r) for r in cur.fetchall()]
+                cur.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users ORDER BY id ASC")
+                db_rows = [_normalize_user_dict(dict(r)) for r in cur.fetchall()]  # type: ignore[misc]
             conn.close()
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
     if not db_rows and (engine == "sqlite" or ACTIVE_ENGINE == "sqlite"):
         with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-            db_rows = [dict(r) for r in conn.execute("SELECT id, username, email, role, created_at FROM users ORDER BY id ASC").fetchall()]
+            db_rows = [_normalize_user_dict(dict(r)) for r in conn.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users ORDER BY id ASC").fetchall()]  # type: ignore[misc]
 
-    existing_usernames = {r["username"] for r in db_rows}
+    existing_usernames = {r["username"] for r in db_rows if r}
     # Append virtual test accounts only if not already registered in DB
-    result = list(db_rows)
+    result = [r for r in db_rows if r]
     for v in _get_static_test_accounts().values():
         if v["username"] not in existing_usernames:
-            v_copy = dict(v)
-            v_copy.pop("password", None)
-            result.append(v_copy)
+            norm_v = _normalize_user_dict(v)
+            if norm_v:
+                result.append(norm_v)
 
     return result
+
+
+def update_user_password(
+    user_id: int,
+    new_password: str,
+    must_change_password: bool = False,
+    db_path: Path | str | None = None,
+) -> bool:
+    """Update password hash and mandatory password change flag."""
+    if not new_password:
+        raise ValueError("Password cannot be empty")
+    pwd_hash = generate_password_hash(new_password)
+    must_change_val = 1 if must_change_password else 0
+
+    if user_id in (-1, -2, -3):
+        for target in _get_static_test_accounts().values():
+            if target["id"] == user_id:
+                target["password"] = new_password
+                target["must_change_password"] = must_change_password
+                return True
+        return True
+
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET password_hash = %s, must_change_password = %s WHERE id = %s",
+                    (pwd_hash, must_change_val, user_id),
+                )
+            conn.close()
+            return True
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?",
+            (pwd_hash, must_change_val, user_id),
+        )
+        conn.commit()
+    return True
+
+
+def toggle_user_2fa(
+    user_id: int,
+    enabled: bool,
+    backup_codes: list[str] | str | None = None,
+    db_path: Path | str | None = None,
+) -> bool:
+    """Enable or disable 2FA for a user and optionally store emergency backup codes."""
+    enabled_val = 1 if enabled else 0
+    codes_str = ",".join(backup_codes) if isinstance(backup_codes, list) else (backup_codes or "")
+
+    if user_id in (-1, -2, -3):
+        for target in _get_static_test_accounts().values():
+            if target["id"] == user_id:
+                target["is_2fa_enabled"] = enabled
+                if backup_codes is not None:
+                    target["backup_codes"] = codes_str
+                return True
+        return True
+
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                if backup_codes is not None:
+                    cur.execute(
+                        "UPDATE users SET is_2fa_enabled = %s, backup_codes = %s WHERE id = %s",
+                        (enabled_val, codes_str, user_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE users SET is_2fa_enabled = %s WHERE id = %s",
+                        (enabled_val, user_id),
+                    )
+            conn.close()
+            return True
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        if backup_codes is not None:
+            conn.execute(
+                "UPDATE users SET is_2fa_enabled = ?, backup_codes = ? WHERE id = ?",
+                (enabled_val, codes_str, user_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET is_2fa_enabled = ? WHERE id = ?",
+                (enabled_val, user_id),
+            )
+        conn.commit()
+    return True
+
+
+def consume_backup_code(
+    user_id: int,
+    code: str,
+    db_path: Path | str | None = None,
+) -> bool:
+    """Verify and consume a single-use emergency backup code."""
+    code = (code or "").strip().upper()
+    if not code:
+        return False
+
+    user = get_user_by_id(user_id, db_path=db_path)
+    if not user:
+        return False
+
+    raw_codes = user.get("backup_codes") or ""
+    existing_list = [c.strip().upper() for c in re.split(r"[\n,]+", raw_codes) if c.strip()]
+    if code not in existing_list:
+        return False
+
+    existing_list.remove(code)
+    new_codes_str = ",".join(existing_list)
+    toggle_user_2fa(user_id, enabled=True, backup_codes=new_codes_str, db_path=db_path)
+    return True
     for v in _get_static_test_accounts().values():
         if v["username"] not in existing_usernames:
             v_copy = dict(v)

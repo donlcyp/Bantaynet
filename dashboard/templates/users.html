@@ -37,64 +37,89 @@
         <div id="emailFeedback" class="field-error-text" style="display: none;"></div>
       </div>
 
-      <div style="margin-bottom: 1rem;">
-        <label for="new_password" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Password</label>
-        <div class="password-input-group">
-          <input type="password" id="new_password" name="password" class="form-control" placeholder="••••••••" required style="width: 100%;" oninput="updatePasswordStrength()">
-          <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('new_password', this)" aria-label="Toggle password visibility" title="Show/Hide Password">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-          </button>
+      <!-- Generic Temporary Password Toggle -->
+      <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; margin: 0; color: var(--text-main);">
+          <input type="checkbox" id="use_generic_pw" name="use_generic_pw" onchange="toggleGenericPassword(this)" checked>
+          <span>Use Generic Initial Temporary Password (<code style="color: #38bdf8;">ChangeMe2026!Temp</code>)</span>
+        </label>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; margin-left: 1.4rem; line-height: 1.4;">
+          The operator will be notified via email and required to choose a permanent secure passphrase immediately upon their first sign-in.
         </div>
-
-        <!-- Live Password Strength Meter -->
-        <div class="password-strength-container">
-          <div class="password-strength-bar">
-            <div id="strengthFill" class="password-strength-fill"></div>
-          </div>
-          <div class="password-strength-label">
-            <span id="strengthText">Strength: Enter password</span>
-            <span style="color: var(--text-dim);">NIST SP 800-63B</span>
-          </div>
-        </div>
-
-        <!-- Real-time Standards Checklist -->
-        <ul class="password-checklist">
-          <li id="rule-len" class="checklist-rule invalid">
-            <span class="icon">○</span> At least 8 characters (max 128)
-          </li>
-          <li id="rule-upper" class="checklist-rule invalid">
-            <span class="icon">○</span> At least one uppercase letter (A-Z)
-          </li>
-          <li id="rule-lower" class="checklist-rule invalid">
-            <span class="icon">○</span> At least one lowercase letter (a-z)
-          </li>
-          <li id="rule-digit" class="checklist-rule invalid">
-            <span class="icon">○</span> At least one number (0-9)
-          </li>
-          <li id="rule-special" class="checklist-rule invalid">
-            <span class="icon">○</span> At least one special symbol (!@#$%^&*...)
-          </li>
-          <li id="rule-username" class="checklist-rule invalid">
-            <span class="icon">○</span> Cannot contain operator username
-          </li>
-        </ul>
       </div>
 
-      <div style="margin-bottom: 1rem;">
-        <label for="confirm_password" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Confirm Password</label>
-        <div class="password-input-group">
-          <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="••••••••" required style="width: 100%;" oninput="checkPasswordMatch()">
-          <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('confirm_password', this)" aria-label="Toggle confirm password visibility" title="Show/Hide Password">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-          </button>
+      <!-- Manual Custom Password Fields -->
+      <div id="manualPasswordSection" style="display: none;">
+        <div style="margin-bottom: 1rem;">
+          <label for="new_password" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Custom Temporary Password</label>
+          <div class="password-input-group">
+            <input type="password" id="new_password" name="password" class="form-control" placeholder="••••••••" style="width: 100%;" oninput="updatePasswordStrength()">
+            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('new_password', this)" aria-label="Toggle password visibility" title="Show/Hide Password">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Live Password Strength Meter -->
+          <div class="password-strength-container">
+            <div class="password-strength-bar">
+              <div id="strengthFill" class="password-strength-fill"></div>
+            </div>
+            <div class="password-strength-label">
+              <span id="strengthText">Strength: Enter password</span>
+              <span style="color: var(--text-dim);">NIST SP 800-63B</span>
+            </div>
+          </div>
+
+          <!-- Real-time Standards Checklist -->
+          <ul class="password-checklist">
+            <li id="rule-len" class="checklist-rule invalid">
+              <span class="icon">○</span> At least 8 characters (max 128)
+            </li>
+            <li id="rule-upper" class="checklist-rule invalid">
+              <span class="icon">○</span> At least one uppercase letter (A-Z)
+            </li>
+            <li id="rule-lower" class="checklist-rule invalid">
+              <span class="icon">○</span> At least one lowercase letter (a-z)
+            </li>
+            <li id="rule-digit" class="checklist-rule invalid">
+              <span class="icon">○</span> At least one number (0-9)
+            </li>
+            <li id="rule-special" class="checklist-rule invalid">
+              <span class="icon">○</span> At least one special symbol (!@#$%^&*...)
+            </li>
+            <li id="rule-username" class="checklist-rule invalid">
+              <span class="icon">○</span> Cannot contain operator username
+            </li>
+          </ul>
         </div>
-        <div id="matchIndicator" style="font-size: 0.75rem; margin-top: 0.35rem; display: none;"></div>
+
+        <div style="margin-bottom: 1rem;">
+          <label for="confirm_password" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Confirm Custom Password</label>
+          <div class="password-input-group">
+            <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="••••••••" style="width: 100%;" oninput="checkPasswordMatch()">
+            <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('confirm_password', this)" aria-label="Toggle confirm password visibility" title="Show/Hide Password">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+          <div id="matchIndicator" style="font-size: 0.75rem; margin-top: 0.35rem; display: none;"></div>
+        </div>
+      </div>
+
+      <!-- Two-Factor Authentication Option -->
+      <div style="margin-bottom: 1.25rem; padding: 0.75rem; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; margin: 0; color: var(--text-main);">
+          <input type="checkbox" id="enable_2fa" name="enable_2fa">
+          <span>Enable Two-Factor Authentication (2FA via Email OTP)</span>
+        </label>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; margin-left: 1.4rem; line-height: 1.4;">
+          Dispatches a 6-digit security code via Gmail/SMTP on each sign-in attempt. Emergency backup codes will also be generated.
+        </div>
       </div>
 
       <div style="margin-bottom: 1.5rem;">
@@ -152,6 +177,7 @@
           <th>Username</th>
           <th>Email Address</th>
           <th>Role</th>
+          <th>2FA Status</th>
           <th>Created At</th>
           <th>Change Role</th>
           <th>Actions</th>
@@ -183,6 +209,13 @@
               <span class="badge" style="background: rgba(167, 139, 250, 0.15); border-color: #a78bfa; color: #c4b5fd;">Viewer</span>
             {% endif %}
           </td>
+          <td>
+            {% if u.is_2fa_enabled %}
+              <span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7; font-size: 0.72rem;">2FA Active</span>
+            {% else %}
+              <span class="badge" style="background: rgba(148, 163, 184, 0.15); border-color: #64748b; color: #94a3b8; font-size: 0.72rem;">Disabled</span>
+            {% endif %}
+          </td>
           <td style="font-size: 0.82rem; color: var(--text-muted);">{{ u.created_at[:19] if u.created_at else '-' }}</td>
           <td>
             {% if u.is_virtual %}
@@ -201,16 +234,26 @@
             {% endif %}
           </td>
           <td>
-            {% if u.is_virtual or (current_user and current_user.id == u.id) %}
-              <span style="font-size: 0.75rem; color: var(--text-dim);">-</span>
-            {% else %}
-              <form method="POST" action="{{ url_for('remove_user', user_id=u.id) }}" onsubmit="return confirm('Delete operator account \'{{ u.username }}\'?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; color: #f87171; border-color: rgba(239,68,68,0.3);">
-                  Delete
-                </button>
-              </form>
-            {% endif %}
+            <div style="display: flex; gap: 0.35rem; align-items: center;">
+              {% if not u.is_virtual %}
+                <form method="POST" action="{{ url_for('admin_toggle_2fa', user_id=u.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; height: 30px;" title="Toggle Two-Factor Authentication">
+                    {{ 'Disable 2FA' if u.is_2fa_enabled else 'Enable 2FA' }}
+                  </button>
+                </form>
+              {% endif %}
+              {% if u.is_virtual or (current_user and current_user.id == u.id) %}
+                <span style="font-size: 0.75rem; color: var(--text-dim);">-</span>
+              {% else %}
+                <form method="POST" action="{{ url_for('remove_user', user_id=u.id) }}" onsubmit="return confirm('Delete operator account \'{{ u.username }}\'?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; height: 30px; color: #f87171; border-color: rgba(239,68,68,0.3);">
+                    Delete
+                  </button>
+                </form>
+              {% endif %}
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -389,6 +432,22 @@
       isEmailDuplicate = false;
     }
     updateSubmitState();
+  }
+
+  function toggleGenericPassword(cb) {
+    const manualSection = document.getElementById('manualPasswordSection');
+    const newPwd = document.getElementById('new_password');
+    const confirmPwd = document.getElementById('confirm_password');
+    if (!manualSection) return;
+    if (cb.checked) {
+      manualSection.style.display = 'none';
+      if (newPwd) newPwd.required = false;
+      if (confirmPwd) confirmPwd.required = false;
+    } else {
+      manualSection.style.display = 'block';
+      if (newPwd) newPwd.required = true;
+      if (confirmPwd) confirmPwd.required = true;
+    }
   }
 </script>
 {% endblock %}

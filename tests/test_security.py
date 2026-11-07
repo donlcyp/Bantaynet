@@ -377,6 +377,152 @@ def test_email_validation_and_duplicate_prevention(tmp_path):
         create_user("user_three", "ValidPass123!", "viewer", email="FIRST_OPERATOR@SOC.CORP", db_path=test_db)
 
 
+def test_two_factor_auth_email_and_backup_code(test_app_client):
+    """Verify Two-Step Login Experience: Step 1 password -> Step 2 2FA verification."""
+    import secrets
+    from src.db import create_user, toggle_user_2fa, get_user_by_username
+    from werkzeug.security import generate_password_hash
+
+    uname = f"mfa_{secrets.token_hex(4)}"
+    email = f"{uname}@soc.corp"
+
+    # Create account with 2FA enabled and a backup code
+    uid = create_user(uname, "SecurePass123!", "analyst", email=email, is_2fa_enabled=True, backup_codes=["TEST-1234", "TEST-5678"])
+    assert uid > 0
+
+    # Step 1: Login with credentials redirects to /login/2fa
+    res_step1 = test_app_client.post(
+        "/login",
+        data={"username": uname, "password": "SecurePass123!"},
+    )
+    assert res_step1.status_code == 302
+    assert "/login/2fa" in res_step1.headers["Location"]
+
+    # Trying to access dashboard before completing 2FA must redirect to /login
+    res_dash = test_app_client.get("/")
+    assert res_dash.status_code == 302
+    assert "/login" in res_dash.headers["Location"]
+
+    # Step 2: Test invalid 2FA code fails
+    res_invalid_code = test_app_client.post("/login/2fa", data={"code": "000000"}, follow_redirects=True)
+    assert b"Invalid 6-digit verification code" in res_invalid_code.data
+
+    # Step 2: Test emergency backup code succeeds and logs in
+    res_backup = test_app_client.post("/login/2fa", data={"code": "TEST-1234"}, follow_redirects=True)
+    assert b"Two-factor authentication verified successfully" in res_backup.data
+    # Should redirect to first_time_change_password because must_change_password is true by default
+    assert b"Password Setup" in res_backup.data
+
+    # Log out
+    test_app_client.get("/logout")
+
+    # Log in again to verify consumed backup code cannot be used twice
+    test_app_client.post("/login", data={"username": uname, "password": "SecurePass123!"})
+    res_reuse = test_app_client.post("/login/2fa", data={"code": "TEST-1234"}, follow_redirects=True)
+    assert b"Invalid 6-digit verification code" in res_reuse.data
+
+    # Second backup code TEST-5678 still works
+    res_backup2 = test_app_client.post("/login/2fa", data={"code": "TEST-5678"}, follow_redirects=True)
+    assert b"Two-factor authentication verified successfully" in res_backup2.data
+
+
+def test_two_factor_rate_limiting(test_app_client):
+    """Verify brute-force guard on /login/2fa triggers HTTP 429 lockout after 5 failed attempts."""
+    import secrets
+    from src.db import create_user
+    from dashboard.app import _login_failures
+
+    _login_failures.clear()
+    uname = f"victim_{secrets.token_hex(4)}"
+    uid = create_user(uname, "VictimPass123!", "viewer", is_2fa_enabled=True)
+    test_app_client.post("/login", data={"username": uname, "password": "VictimPass123!"})
+
+    for _ in range(5):
+        test_app_client.post("/login/2fa", data={"code": "999999"})
+
+    # 6th attempt must be blocked by rate limiter with HTTP 429
+    blocked = test_app_client.post("/login/2fa", data={"code": "999999"})
+    assert blocked.status_code == 429
+    assert b"Security Lockout: Too many failed 2FA attempts" in blocked.data
+    _login_failures.clear()
+
+
+def test_first_time_password_change_flow(test_app_client):
+    """Verify new operators must change their generic temporary password upon initial login."""
+    import secrets
+    from src.db import create_user, authenticate_user
+
+    uname = f"first_{secrets.token_hex(4)}"
+    uid = create_user(uname, "ChangeMe2026!Temp", "analyst", must_change_password=True, is_2fa_enabled=False)
+
+    # Login succeeds but redirects to /change-password
+    res_login = test_app_client.post(
+        "/login",
+        data={"username": uname, "password": "ChangeMe2026!Temp"},
+        follow_redirects=True,
+    )
+    assert b"Password Setup" in res_login.data
+
+    # Navigating away is restricted until password changed
+    res_nav = test_app_client.get("/", follow_redirects=True)
+    assert b"Password Setup" in res_nav.data
+
+    # Submitting wrong current password fails
+    res_wrong_curr = test_app_client.post(
+        "/change-password",
+        data={
+            "current_password": "WrongPassword!",
+            "new_password": "NewPermanentPass123!",
+            "confirm_password": "NewPermanentPass123!",
+        },
+    )
+    assert b"Current temporary password verification failed" in res_wrong_curr.data
+
+    # Submitting same temporary password as new password fails
+    res_same = test_app_client.post(
+        "/change-password",
+        data={
+            "current_password": "ChangeMe2026!Temp",
+            "new_password": "ChangeMe2026!Temp",
+            "confirm_password": "ChangeMe2026!Temp",
+        },
+    )
+    assert b"New permanent password cannot be identical" in res_same.data
+
+    # Submitting valid new password succeeds and grants full access
+    res_ok = test_app_client.post(
+        "/change-password",
+        data={
+            "current_password": "ChangeMe2026!Temp",
+            "new_password": "BrandNewPermanentPass999!",
+            "confirm_password": "BrandNewPermanentPass999!",
+        },
+        follow_redirects=True,
+    )
+    assert b"Password successfully updated" in res_ok.data
+    assert authenticate_user(uname, "BrandNewPermanentPass999!") is not None
+
+
+def test_email_notification_error_handling():
+    """Verify email dispatcher functions gracefully handle unconfigured or invalid email without throwing exceptions."""
+    from src.notifier import send_2fa_otp_email, send_account_created_email
+
+    # Missing email
+    ok1, msg1 = send_2fa_otp_email("", "123456")
+    assert ok1 is False
+    assert "missing" in msg1.lower()
+
+    # Unconfigured SMTP credentials
+    ok2, msg2 = send_2fa_otp_email("test@example.com", "123456")
+    assert ok2 is False
+    assert "not configured" in msg2.lower()
+
+    ok3, msg3 = send_account_created_email("test@example.com", "user", "TempPass!")
+    assert ok3 is False
+    assert "not configured" in msg3.lower()
+
+
+
 
 
 

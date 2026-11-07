@@ -29,6 +29,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 # Ensure project root is on sys.path
@@ -50,9 +51,11 @@ from src.evidence import calculate_sha256
 from src.db import (
     authenticate_user,
     clear_alerts,
+    consume_backup_code,
     create_user,
     delete_alert,
     delete_user,
+    generate_backup_codes,
     get_alert_by_id,
     get_alerts,
     get_all_users,
@@ -65,12 +68,17 @@ from src.db import (
     init_db,
     is_default_admin_password_active,
     log_audit_event,
+    toggle_user_2fa,
+    update_user_password,
     update_user_role,
 )
 from src.export import write_alerts_csv
+from src.notifier import send_2fa_otp_email, send_account_created_email
 from src.report_pdf import generate_alert_pdf, generate_summary_pdf
 from src.security import validate_email_standards, validate_password_standards, validate_username_standards
 from src.store import store_alerts
+
+DEFAULT_INITIAL_PASSWORD = "ChangeMe2026!Temp"
 
 app = Flask(
     __name__,
@@ -157,6 +165,12 @@ def security_and_auth_middleware():
         g.current_user = {"id": 1, "username": "analyst", "role": "analyst"}
     else:
         g.current_user = None
+
+    # 4. Mandatory First-Time Password Change Enforcement
+    if user_id is not None and getattr(g, "current_user", None) and g.current_user.get("must_change_password"):
+        allowed_endpoints = {"first_time_change_password", "logout", "static"}
+        if request.endpoint not in allowed_endpoints:
+            return redirect(url_for("first_time_change_password"))
 
 
 @app.after_request
@@ -335,6 +349,32 @@ def login():
         user = authenticate_user(username, password)
         if user:
             clear_login_failures(client_ip, username)
+
+            # Two-Step Login Experience: Step 2 2FA Check
+            if user.get("is_2fa_enabled"):
+                session.clear()
+                otp = f"{secrets.randbelow(900000) + 100000}"
+                session["2fa_pending_user_id"] = user["id"]
+                session["2fa_pending_code"] = generate_password_hash(otp)
+                session["2fa_pending_expires"] = time.time() + 600  # 10 minutes
+                session["2fa_pending_next"] = next_url
+                session["2fa_email"] = user.get("email") or ""
+                session["2fa_username"] = user.get("username") or ""
+                session["csrf_token"] = secrets.token_hex(32)
+
+                if user.get("email"):
+                    sent_ok, send_msg = send_2fa_otp_email(user["email"], otp, user["username"])
+                    if sent_ok:
+                        flash(f"Two-factor verification code dispatched to {user['email']}.", "info")
+                    else:
+                        flash(f"2FA email notice: {send_msg}. You may enter an emergency backup code if email delivery is delayed.", "warning")
+                else:
+                    flash("Two-Factor Authentication is active. Please enter your 6-digit code or emergency backup code.", "info")
+
+                app.logger.warning(f"[2FA AUTH] Generated code for '{user['username']}': {otp}")
+                return redirect(url_for("login_2fa"))
+
+            # Single-factor login path
             session.clear()
             session["user_id"] = user["id"]
             session["last_activity"] = time.time()
@@ -343,6 +383,9 @@ def login():
 
             log_audit_event(user["username"], "login", "Web Portal", f"Role: {user['role']}")
             flash(f"Logged in successfully as {user['username']} ({user['role'].title()} role).", "success")
+
+            if user.get("must_change_password"):
+                return redirect(url_for("first_time_change_password"))
             return redirect(next_url)
         else:
             record_login_failure(client_ip, username)
@@ -351,6 +394,157 @@ def login():
             flash("Authentication error: Invalid username or password. Please verify credentials.", "error")
 
     return render_template("login.html", next=next_url)
+
+
+
+@app.route("/login/2fa", methods=["GET", "POST"])
+def login_2fa():
+    if getattr(g, "current_user", None) is not None:
+        return redirect(url_for("index"))
+
+    user_id = session.get("2fa_pending_user_id")
+    expires = session.get("2fa_pending_expires", 0)
+    if not user_id or time.time() > expires:
+        session.pop("2fa_pending_user_id", None)
+        flash("Your two-factor authentication session has expired. Please sign in again.", "error")
+        return redirect(url_for("login"))
+
+    pending_user = get_user_by_id(user_id)
+    if not pending_user:
+        session.clear()
+        return redirect(url_for("login"))
+
+    client_ip = request.remote_addr or "127.0.0.1"
+    next_url = session.get("2fa_pending_next") or url_for("index")
+
+    if request.method == "POST":
+        code = request.form.get("code", "").strip()
+
+        # Brute-Force Guard: Strict rate limiting (max 5 failed attempts before 5-minute lockout)
+        rate_key = f"2fa:{user_id}"
+        if is_login_rate_limited(client_ip, rate_key):
+            app.logger.warning(f"2FA rate limit exceeded for user #{user_id} from {client_ip}")
+            log_audit_event("system", "2fa_rate_limit_lockout", f"IP: {client_ip}", f"User ID: {user_id}")
+            failures = _login_failures.get(f"{client_ip}:{rate_key.lower()}", []) or _login_failures.get(client_ip, [])
+            remaining_sec = max(1, int(LOGIN_LOCKOUT_SECONDS - (time.time() - failures[0]))) if failures else LOGIN_LOCKOUT_SECONDS
+            flash(
+                f"Security Lockout: Too many failed 2FA attempts. For security, you are temporarily locked out. Please try again in {remaining_sec} seconds.",
+                "error",
+            )
+            return render_template("login_2fa.html", email=session.get("2fa_email"), username=session.get("2fa_username")), 429
+
+        if not code:
+            flash("Please enter your 6-digit authentication code or emergency backup code.", "error")
+            return render_template("login_2fa.html", email=session.get("2fa_email"), username=session.get("2fa_username")), 400
+
+        verified = False
+        consumed_backup = False
+
+        # 1. Check 6-digit OTP code
+        stored_hash = session.get("2fa_pending_code", "")
+        if stored_hash and check_password_hash(stored_hash, code):
+            verified = True
+
+        # 2. Check single-use emergency backup recovery code
+        if not verified:
+            if consume_backup_code(user_id, code):
+                verified = True
+                consumed_backup = True
+
+        if verified:
+            clear_login_failures(client_ip, rate_key)
+            session.pop("2fa_pending_user_id", None)
+            session.pop("2fa_pending_code", None)
+            session.pop("2fa_pending_expires", None)
+            session.pop("2fa_pending_next", None)
+            session.pop("2fa_email", None)
+            session.pop("2fa_username", None)
+
+            session["user_id"] = pending_user["id"]
+            session["last_activity"] = time.time()
+            session["csrf_token"] = secrets.token_hex(32)
+
+            backup_note = " (emergency backup code used)" if consumed_backup else ""
+            log_audit_event(pending_user["username"], "login_2fa", "Web Portal", f"2FA verification successful{backup_note}")
+            flash(f"Two-factor authentication verified successfully. Welcome, {pending_user['username']}!", "success")
+
+            if pending_user.get("must_change_password"):
+                return redirect(url_for("first_time_change_password"))
+            return redirect(next_url)
+        else:
+            record_login_failure(client_ip, rate_key)
+            app.logger.warning(f"Failed 2FA attempt for user #{user_id} from {client_ip}")
+            log_audit_event("anonymous", "failed_2fa", f"IP: {client_ip}", f"User: {pending_user['username']}")
+            flash("Authentication error: Invalid 6-digit verification code or emergency backup code.", "error")
+
+    return render_template("login_2fa.html", email=session.get("2fa_email"), username=session.get("2fa_username"))
+
+
+@app.route("/login/2fa/resend", methods=["POST"])
+def login_2fa_resend():
+    user_id = session.get("2fa_pending_user_id")
+    expires = session.get("2fa_pending_expires", 0)
+    if not user_id or time.time() > expires:
+        flash("Your two-factor authentication session has expired. Please sign in again.", "error")
+        return redirect(url_for("login"))
+
+    pending_user = get_user_by_id(user_id)
+    if not pending_user or not pending_user.get("email"):
+        flash("Cannot resend code: no email address associated with account.", "error")
+        return redirect(url_for("login_2fa"))
+
+    otp = f"{secrets.randbelow(900000) + 100000}"
+    session["2fa_pending_code"] = generate_password_hash(otp)
+    session["2fa_pending_expires"] = time.time() + 600
+
+    sent_ok, send_msg = send_2fa_otp_email(pending_user["email"], otp, pending_user["username"])
+    app.logger.warning(f"[2FA AUTH RESEND] Code for '{pending_user['username']}': {otp}")
+    if sent_ok:
+        flash(f"A new 6-digit verification code was dispatched to {pending_user['email']}.", "success")
+    else:
+        flash(f"Could not resend email code: {send_msg}", "error")
+
+    return redirect(url_for("login_2fa"))
+
+
+@app.route("/change-password", methods=["GET", "POST"])
+@login_required
+def first_time_change_password():
+    user = getattr(g, "current_user", None)
+    if not user:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        current_password = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        test_auth = authenticate_user(user["username"], current_password)
+        if not test_auth:
+            flash("Current temporary password verification failed. Please enter your temporary password correctly.", "error")
+            return render_template("change_password.html", user=user)
+
+        if new_password != confirm_password:
+            flash("Password error: Password confirmation does not match.", "error")
+            return render_template("change_password.html", user=user)
+
+        if new_password == current_password:
+            flash("Password error: New permanent password cannot be identical to your temporary password.", "error")
+            return render_template("change_password.html", user=user)
+
+        pwd_errors = validate_password_standards(new_password, user["username"])
+        if pwd_errors:
+            for err in pwd_errors:
+                flash(f"Password standards error: {err}", "error")
+            return render_template("change_password.html", user=user)
+
+        update_user_password(user["id"], new_password, must_change_password=False)
+        user["must_change_password"] = False
+        log_audit_event(user["username"], "change_password", "Security Policy", "Operator set permanent password")
+        flash("Password successfully updated! Welcome to BantayNet.", "success")
+        return redirect(url_for("index"))
+
+    return render_template("change_password.html", user=user)
 
 
 
@@ -389,9 +583,16 @@ def manage_users():
 def add_user():
     username = request.form.get("username", "").strip()
     email = (request.form.get("email") or "").strip().lower() or None
-    password = request.form.get("password", "")
-    confirm_password = request.form.get("confirm_password", "")
+    raw_password = request.form.get("password", "").strip()
+    confirm_password = request.form.get("confirm_password", "").strip()
+    use_generic_pw = request.form.get("use_generic_pw") == "on" or not raw_password
+    enable_2fa = request.form.get("enable_2fa") == "on"
     role = request.form.get("role", "viewer").strip().lower()
+
+    if use_generic_pw:
+        password = DEFAULT_INITIAL_PASSWORD
+    else:
+        password = raw_password
 
     # 1. Error checking: Username format & length standards
     user_errors = validate_username_standards(username)
@@ -408,17 +609,18 @@ def add_user():
                 flash(f"Email error: {err}", "error")
             return redirect(url_for("manage_users"))
 
-    # 3. Error checking: Password confirmation match
-    if confirm_password and password != confirm_password:
+    # 3. Error checking: Password confirmation match (when manual password provided)
+    if not use_generic_pw and confirm_password and password != confirm_password:
         flash("Password error: Password confirmation does not match.", "error")
         return redirect(url_for("manage_users"))
 
     # 4. Error checking: Comprehensive NIST/OWASP password standards
-    pwd_errors = validate_password_standards(password, username)
-    if pwd_errors:
-        for err in pwd_errors:
-            flash(f"Password standards error: {err}", "error")
-        return redirect(url_for("manage_users"))
+    if not use_generic_pw:
+        pwd_errors = validate_password_standards(password, username)
+        if pwd_errors:
+            for err in pwd_errors:
+                flash(f"Password standards error: {err}", "error")
+            return redirect(url_for("manage_users"))
 
     # 5. Error checking: Prevent duplicate / double account creation
     existing_user = get_user_by_username(username)
@@ -432,16 +634,63 @@ def add_user():
             flash(f"Account creation failed: An account with email '{email}' already exists. Email addresses must be unique.", "error")
             return redirect(url_for("manage_users"))
 
+    backup_codes = generate_backup_codes(8) if enable_2fa else None
+
     try:
-        create_user(username, password, role=role, email=email)
+        create_user(
+            username,
+            password,
+            role=role,
+            email=email,
+            must_change_password=True,
+            is_2fa_enabled=enable_2fa,
+            backup_codes=backup_codes,
+        )
         admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
         email_info = f", Email: {email}" if email else ""
-        log_audit_event(admin_user, "create_user", f"User '{username}'", f"Role: {role}{email_info}")
-        flash(f"User '{username}' created successfully with {role.title()} role.", "success")
+        tfa_info = ", 2FA: Enabled" if enable_2fa else ""
+        log_audit_event(admin_user, "create_user", f"User '{username}'", f"Role: {role}{email_info}{tfa_info}")
+
+        if email:
+            sent_ok, send_msg = send_account_created_email(email, username, password, url_for("login", _external=True))
+            if sent_ok:
+                flash(f"User '{username}' created ({role.title()} role). Welcome notification email with temporary credentials was dispatched to {email}.", "success")
+            else:
+                flash(f"User '{username}' created with temporary password '{password}', but email could not be delivered: {send_msg}. Please provide the credentials to the operator manually.", "warning")
+        else:
+            flash(f"User '{username}' created with initial temporary password '{password}'. Operator must change password upon first sign-in.", "success")
+
+        if enable_2fa and backup_codes:
+            codes_str = ", ".join(backup_codes)
+            flash(f"Emergency backup codes for '{username}': {codes_str}", "info")
     except ValueError as exc:
         flash(f"Account creation failed: {exc}", "error")
     except Exception as exc:
         flash(f"Unexpected error creating user: {exc}", "error")
+
+    return redirect(url_for("manage_users"))
+
+
+@app.route("/users/<int:user_id>/toggle-2fa", methods=["POST"])
+@role_required("admin")
+def admin_toggle_2fa(user_id: int):
+    user = get_user_by_id(user_id)
+    if not user:
+        abort(404, description="User not found")
+
+    enable = not user.get("is_2fa_enabled", False)
+    backup_codes = generate_backup_codes(8) if enable else None
+    toggle_user_2fa(user_id, enable, backup_codes=backup_codes)
+
+    admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+    status_str = "enabled" if enable else "disabled"
+    log_audit_event(admin_user, "toggle_2fa", f"User #{user_id} ({user['username']})", f"Set 2FA to {status_str}")
+
+    if enable:
+        codes_str = ", ".join(backup_codes) if backup_codes else ""
+        flash(f"Two-Factor Authentication enabled for '{user['username']}'. Emergency backup recovery codes: {codes_str}", "success")
+    else:
+        flash(f"Two-Factor Authentication disabled for '{user['username']}'.", "success")
 
     return redirect(url_for("manage_users"))
 
