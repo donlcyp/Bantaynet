@@ -654,11 +654,11 @@ def add_user():
         if email:
             sent_ok, send_msg = send_account_created_email(email, username, password, url_for("login", _external=True))
             if sent_ok:
-                flash(f"User '{username}' created ({role.title()} role). Welcome notification email with temporary credentials was dispatched to {email}.", "success")
+                flash(f"User '{username}' created successfully ({role.title()} role). Welcome notification email with temporary credentials was dispatched to {email}.", "success")
             else:
-                flash(f"User '{username}' created with temporary password '{password}', but email could not be delivered: {send_msg}. Please provide the credentials to the operator manually.", "warning")
+                flash(f"User '{username}' created successfully with temporary password '{password}', but email could not be delivered: {send_msg}. Please provide the credentials to the operator manually.", "warning")
         else:
-            flash(f"User '{username}' created with initial temporary password '{password}'. Operator must change password upon first sign-in.", "success")
+            flash(f"User '{username}' created successfully with initial temporary password '{password}'. Operator must change password upon first sign-in.", "success")
 
         if enable_2fa and backup_codes:
             codes_str = ", ".join(backup_codes)
