@@ -60,6 +60,7 @@ from src.db import (
     get_chart_data,
     get_summary_stats,
     get_user_by_id,
+    get_user_by_username,
     init_db,
     is_default_admin_password_active,
     log_audit_event,
@@ -409,13 +410,19 @@ def add_user():
             flash(f"Password standards error: {err}", "error")
         return redirect(url_for("manage_users"))
 
+    # 4. Error checking: Prevent duplicate / double account creation
+    existing_user = get_user_by_username(username)
+    if existing_user is not None:
+        flash(f"Account creation failed: An account with username '{username}' already exists. Usernames must be unique.", "error")
+        return redirect(url_for("manage_users"))
+
     try:
         create_user(username, password, role)
         admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
         log_audit_event(admin_user, "create_user", f"User '{username}'", f"Role: {role}")
         flash(f"User '{username}' created successfully with {role.title()} role.", "success")
     except ValueError as exc:
-        flash(f"Error creating user: {exc}", "error")
+        flash(f"Account creation failed: {exc}", "error")
     except Exception as exc:
         flash(f"Unexpected error creating user: {exc}", "error")
 

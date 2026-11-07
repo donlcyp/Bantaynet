@@ -266,5 +266,38 @@ def test_custom_error_pages_user_facing(test_app_client):
     assert b"Alert #99999 not found" in res_alert.data
 
 
+def test_duplicate_account_creation_prevention(test_app_client, tmp_path):
+    """Verify system rejects duplicate account creation for both virtual and existing DB accounts."""
+    from src.db import create_user, get_user_by_username
+
+    test_db = tmp_path / "test_auth_dup.db"
+
+    # 1. Attempting to create reserved virtual test account (e.g. 'admin' or 'analyst') must fail
+    with pytest.raises(ValueError, match="already exists"):
+        create_user("admin", "ValidPass123!", "admin", db_path=test_db)
+
+    with pytest.raises(ValueError, match="already exists"):
+        create_user("analyst", "ValidPass123!", "analyst", db_path=test_db)
+
+    # 2. Creating a unique account succeeds
+    uid = create_user("brand_new_analyst", "ValidPass123!", "analyst", db_path=test_db)
+    assert uid > 0
+
+    # 3. Attempting to create duplicate of that newly created account must fail
+    with pytest.raises(ValueError, match="already exists"):
+        create_user("brand_new_analyst", "AnotherPass999!", "viewer", db_path=test_db)
+
+    # 4. Case-insensitive duplicate check
+    with pytest.raises(ValueError, match="already exists"):
+        create_user("BRAND_NEW_ANALYST", "AnotherPass999!", "viewer", db_path=test_db)
+
+    # 5. Verify get_user_by_username
+    assert get_user_by_username("admin", db_path=test_db) is not None
+    assert get_user_by_username("brand_new_analyst", db_path=test_db) is not None
+    assert get_user_by_username("BRAND_NEW_ANALYST", db_path=test_db) is not None
+    assert get_user_by_username("completely_nonexistent_user_xyz", db_path=test_db) is None
+
+
+
 
 

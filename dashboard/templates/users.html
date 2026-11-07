@@ -23,11 +23,12 @@
   <!-- Create User Card -->
   <div class="panel">
     <div class="panel-title">Add New User Account</div>
-    <form method="POST" action="{{ url_for('add_user') }}" style="margin-top: 1rem;">
+    <form method="POST" action="{{ url_for('add_user') }}" id="addUserForm" data-existing-usernames="{{ users | map(attribute='username') | list | tojson | forceescape }}" style="margin-top: 1rem;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div style="margin-bottom: 1rem;">
         <label for="new_username" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Username</label>
-        <input type="text" id="new_username" name="username" class="form-control" placeholder="e.g. jdoe, soc_analyst" required style="width: 100%;">
+        <input type="text" id="new_username" name="username" class="form-control" placeholder="e.g. jdoe, soc_analyst" required style="width: 100%;" oninput="checkDuplicateUsername()">
+        <div id="usernameFeedback" class="field-error-text" style="display: none;"></div>
       </div>
 
       <div style="margin-bottom: 1rem;">
@@ -297,6 +298,42 @@
       indicator.style.color = '#f87171';
       indicator.textContent = '✗ Passwords do not match';
     }
+  }
+
+  // Real-time client-side duplicate account detection
+  const addUserForm = document.getElementById('addUserForm');
+  let existingUsernames = [];
+  try {
+    existingUsernames = JSON.parse(addUserForm ? addUserForm.dataset.existingUsernames || '[]' : '[]').map(function(u) { return u.toLowerCase(); });
+  } catch (e) {
+    existingUsernames = [];
+  }
+
+  function checkDuplicateUsername() {
+    const input = document.getElementById('new_username');
+    const feedback = document.getElementById('usernameFeedback');
+    const submitBtn = document.querySelector('#addUserForm button[type="submit"]');
+    if (!input || !feedback) return;
+
+    const val = (input.value || '').trim().toLowerCase();
+    if (!val) {
+      feedback.style.display = 'none';
+      input.classList.remove('is-invalid');
+      if (submitBtn) submitBtn.disabled = false;
+      return;
+    }
+
+    if (existingUsernames.indexOf(val) !== -1) {
+      feedback.innerHTML = `❌ <strong>Duplicate Account:</strong> Username '<code>${val}</code>' already exists. Usernames must be unique.`;
+      feedback.style.display = 'flex';
+      input.classList.add('is-invalid');
+      if (submitBtn) submitBtn.disabled = true;
+    } else {
+      feedback.style.display = 'none';
+      input.classList.remove('is-invalid');
+      if (submitBtn) submitBtn.disabled = false;
+    }
+    updatePasswordStrength();
   }
 </script>
 {% endblock %}

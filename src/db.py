@@ -468,6 +468,10 @@ def create_user(
     if not password:
         raise ValueError("Password cannot be empty")
 
+    # Guard: prevent colliding with in-memory virtual test accounts
+    if username in _get_static_test_accounts():
+        raise ValueError(f"Username '{username}' already exists (reserved system account)")
+
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
     pwd_hash = generate_password_hash(password)
@@ -477,7 +481,7 @@ def create_user(
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+                cur.execute("SELECT id FROM users WHERE LOWER(username) = %s", (username,))
                 if cur.fetchone():
                     raise ValueError(f"Username '{username}' already exists")
                 cur.execute(
@@ -490,18 +494,24 @@ def create_user(
         except Exception as exc:
             if isinstance(exc, ValueError):
                 raise
+            err_str = str(exc).lower()
+            if "unique" in err_str or "duplicate" in err_str or "already exists" in err_str:
+                raise ValueError(f"Username '{username}' already exists") from exc
             _mark_sqlite_fallback(exc)
 
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        existing = conn.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username,)).fetchone()
         if existing:
             raise ValueError(f"Username '{username}' already exists")
-        cursor = conn.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-            (username, pwd_hash, role, now_str),
-        )
-        conn.commit()
-        return int(cursor.lastrowid)
+        try:
+            cursor = conn.execute(
+                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+                (username, pwd_hash, role, now_str),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+        except sqlite3.IntegrityError:
+            raise ValueError(f"Username '{username}' already exists")
 
 
 def authenticate_user(
@@ -581,6 +591,38 @@ def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str,
 
     with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
         row = conn.execute("SELECT id, username, role, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_user_by_username(username: str, db_path: Path | str | None = None) -> dict[str, Any] | None:
+    """Retrieve user by username without password_hash (case-insensitive)."""
+    username = (username or "").strip().lower()
+    if not username:
+        return None
+
+    # Check in-memory virtual test accounts
+    static_users = _get_static_test_accounts()
+    if username in static_users:
+        u_copy = dict(static_users[username])
+        u_copy.pop("password", None)
+        return u_copy
+
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, username, role, created_at FROM users WHERE LOWER(username) = %s", (username,))
+                row = cur.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        row = conn.execute("SELECT id, username, role, created_at FROM users WHERE LOWER(username) = ?", (username,)).fetchone()
         return dict(row) if row else None
 
 
