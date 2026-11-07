@@ -85,6 +85,111 @@ def _connect_smtp(server_host: str, port: int, use_tls: bool = True, timeout: in
         raise
 
 
+def _send_via_mailtrap_api(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    text_content: str,
+    sender: str = "",
+) -> tuple[bool, str] | None:
+    """Send email via Mailtrap HTTPS REST API (port 443) if MAILTRAP_API_TOKEN is configured.
+
+    Supports both Mailtrap Sending API (for verified/demo domains) and Mailtrap Sandbox API
+    (for automated testing, dummy .corp/.local domains, and dev environments).
+    Render free tier blocks SMTP ports (25, 465, 587), but port 443 (HTTPS) is never blocked.
+    Returns None if MAILTRAP_API_TOKEN is not configured.
+    """
+    api_token = (
+        os.environ.get("MAILTRAP_API_TOKEN")
+        or os.environ.get("MAILTRAP_TOKEN")
+        or ""
+    ).strip()
+    if not api_token:
+        return None
+
+    import json
+    import urllib.error
+    import urllib.request
+    from email.utils import parseaddr
+
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "BantayNet-SOC/1.0 (Windows NT 10.0; Win64; x64)",
+    }
+
+    raw_from = (
+        os.environ.get("MAILTRAP_FROM_EMAIL")
+        or sender
+        or "BantayNet SOC <hello@demomailtrap.co>"
+    )
+    from_name, from_addr = parseaddr(raw_from)
+    if not from_addr or "@" not in from_addr:
+        from_addr = "hello@demomailtrap.co"
+    if not from_name:
+        from_name = "BantayNet SOC"
+
+    inbox_id = (os.environ.get("MAILTRAP_INBOX_ID") or "5007832").strip()
+    force_sandbox = os.environ.get("MAILTRAP_USE_SANDBOX", "").lower() in ("1", "true", "yes")
+    is_fictitious = any(
+        to_email.lower().endswith(suffix)
+        for suffix in (".corp", ".local", ".test", ".internal", "@example.com")
+    )
+
+    # 1. Attempt live sending if not forcing sandbox and not using internal dummy domain
+    if not force_sandbox and not is_fictitious:
+        payload = {
+            "from": {"email": from_addr, "name": from_name},
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "text": text_content,
+            "html": html_content,
+        }
+        req = urllib.request.Request(
+            "https://send.api.mailtrap.io/api/send",
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                logger.info("Dispatched email to %s via Mailtrap Sending API", to_email)
+                return True, "Email dispatched successfully via Mailtrap."
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read().decode("utf-8", errors="ignore")
+            logger.warning("Mailtrap Sending API returned HTTP %s: %s; falling back to Sandbox...", exc.code, err_body)
+        except Exception as exc:
+            logger.warning("Mailtrap Sending API connection failed: %s; falling back to Sandbox...", exc)
+
+    # 2. Sandbox delivery fallback (Email Testing: safe, no bounces, captured in web inbox)
+    sandbox_payload = {
+        "from": {"email": from_addr, "name": from_name},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "text": text_content,
+        "html": html_content,
+    }
+    sandbox_req = urllib.request.Request(
+        f"https://sandbox.api.mailtrap.io/api/send/{inbox_id}",
+        data=json.dumps(sandbox_payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(sandbox_req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            logger.info("Captured email to %s in Mailtrap Sandbox (Inbox %s)", to_email, inbox_id)
+            return True, f"Email delivered to Mailtrap Sandbox (Inbox {inbox_id}). Check your Mailtrap dashboard."
+    except urllib.error.HTTPError as exc:
+        err_body = exc.read().decode("utf-8", errors="ignore")
+        logger.error("Mailtrap Sandbox HTTP %s: %s", exc.code, err_body)
+        return False, f"Mailtrap API error ({exc.code}): {err_body}"
+    except Exception as exc:
+        logger.error("Mailtrap delivery failed: %s", exc)
+        return False, f"Mailtrap delivery failed: {exc}"
+
+
 def _send_via_https_api(
     to_email: str,
     subject: str,
@@ -92,11 +197,17 @@ def _send_via_https_api(
     text_content: str,
     sender: str = "",
 ) -> tuple[bool, str] | None:
-    """Send email via Resend HTTPS REST API (port 443) if RESEND_API_KEY is configured.
+    """Send email via Mailtrap or Resend HTTPS REST API (port 443).
 
     Render free tier blocks all outbound SMTP ports (25, 465, 587). Port 443 (HTTPS)
-    is never blocked. Returns None if RESEND_API_KEY is not configured.
+    is never blocked. Returns None if neither HTTPS API is configured.
     """
+    # Priority 1: Mailtrap HTTPS API
+    mailtrap_res = _send_via_mailtrap_api(to_email, subject, html_content, text_content, sender)
+    if mailtrap_res is not None:
+        return mailtrap_res
+
+    # Priority 2: Resend HTTPS API
     api_key = (os.environ.get("RESEND_API_KEY") or "").strip()
     if not api_key:
         return None
@@ -145,7 +256,7 @@ def _send_via_https_api(
 
 
 def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tuple[bool, str]:
-    """Dispatch a 6-digit 2FA verification code to the operator's email address via Gmail/SMTP.
+    """Dispatch a 6-digit 2FA verification code to the operator's email address via Mailtrap, Resend, or SMTP.
 
     Returns (success: bool, message: str).
     """
@@ -154,13 +265,18 @@ def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tupl
         return False, "Recipient email address is missing."
 
     conf = _get_smtp_credentials()
-    if not conf["password"]:
+    has_https_api = bool(
+        (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
+        or (os.environ.get("RESEND_API_KEY") or "").strip()
+    )
+
+    if not conf["password"] and not has_https_api:
         logger.warning(
-            "SMTP credentials not fully configured (GMAIL_APP_PASSWORD/BANTAYNET_SMTP_PASSWORD missing). [Dev/Lab OTP for %s: %s]",
+            "Email credentials not configured (MAILTRAP_API_TOKEN / GMAIL_APP_PASSWORD missing). [Dev/Lab OTP for %s: %s]",
             to_email,
             otp_code,
         )
-        return False, "SMTP email service is not configured (GMAIL_APP_PASSWORD missing in environment)."
+        return False, "Email service is not configured (set MAILTRAP_API_TOKEN or GMAIL_APP_PASSWORD)."
 
     try:
         msg = MIMEMultipart("alternative")
@@ -242,14 +358,19 @@ def send_account_created_email(
         return False, "Recipient email address is missing."
 
     conf = _get_smtp_credentials()
-    if not conf["password"]:
+    has_https_api = bool(
+        (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
+        or (os.environ.get("RESEND_API_KEY") or "").strip()
+    )
+
+    if not conf["password"] and not has_https_api:
         logger.warning(
-            "SMTP not configured; cannot email credentials for '%s' to %s (temp password: %s)",
+            "Email credentials not configured; cannot email credentials for '%s' to %s (temp password: %s)",
             username,
             to_email,
             temp_password,
         )
-        return False, "SMTP email service is not configured (GMAIL_APP_PASSWORD missing)."
+        return False, "Email service is not configured (set MAILTRAP_API_TOKEN or GMAIL_APP_PASSWORD)."
 
     try:
         msg = MIMEMultipart("alternative")
@@ -369,6 +490,21 @@ def send_alert_email(
         )
         msg.attach(MIMEText(body, "plain"))
 
+        # Check HTTPS REST API first if configured and no explicit custom SMTP server is defined
+        if settings.smtp_server in ("localhost", "smtp.gmail.com") and (
+            os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or os.environ.get("RESEND_API_KEY")
+        ):
+            api_res = _send_via_https_api(
+                settings.recipient,
+                msg["Subject"],
+                f"<pre style=\"font-family: monospace; background: #070e1c; color: #f1f5f9; padding: 16px; border-radius: 6px;\">{body}</pre>",
+                body,
+                settings.sender,
+            )
+            if api_res is not None and api_res[0]:
+                logger.info("Sent alert notification email to %s for %s via HTTPS API", settings.recipient, rule)
+                return True
+
         conf = _get_smtp_credentials()
         smtp_server = settings.smtp_server if settings.smtp_server != "localhost" else (conf["server"] or "localhost")
         smtp_port = settings.smtp_port if settings.smtp_port != 587 else (conf["port"] or 587)
@@ -399,13 +535,21 @@ def test_smtp_connection(recipient_email: str) -> tuple[bool, str]:
     if not to_email:
         return False, "Recipient email address is required."
 
-    # Priority 1: Check HTTPS REST API if configured
-    if os.environ.get("RESEND_API_KEY", "").strip():
+    # Priority 1: Check HTTPS REST API if configured (Mailtrap or Resend)
+    has_https_api = bool(
+        (os.environ.get("MAILTRAP_API_TOKEN") or os.environ.get("MAILTRAP_TOKEN") or "").strip()
+        or (os.environ.get("RESEND_API_KEY") or "").strip()
+    )
+    if has_https_api:
         api_res = _send_via_https_api(
             to_email,
             "[BantayNet SOC] HTTPS Email Delivery Test",
-            "<h3>HTTPS Email Delivery Successful</h3><p>BantayNet cloud email delivery is operational via HTTPS (Port 443).</p>",
-            "HTTPS Email Delivery Successful",
+            """<div style="font-family: Arial, sans-serif; max-width: 520px; padding: 20px; background: #0b1528; border: 1px solid #1e3a5f; border-radius: 8px; color: #f1f5f9;">
+              <h2 style="color: #38bdf8; margin: 0 0 10px 0;">Bantay<span style="color: #ffffff;">Net</span> &bull; Cloud Email Verified</h2>
+              <p style="color: #10b981; font-weight: bold; margin: 0 0 10px 0;">✓ HTTPS Email API Connection Successful</p>
+              <p style="color: #94a3b8; font-size: 0.9rem;">Email delivery over HTTPS (Port 443) is fully operational for Render and cloud hosting.</p>
+            </div>""",
+            "BantayNet HTTPS Email API connection successful. Cloud email delivery is operational.",
         )
         if api_res is not None:
             return api_res

@@ -516,11 +516,14 @@ def test_email_notification_error_handling(monkeypatch):
     assert ok1 is False
     assert "missing" in msg1.lower()
 
-    # Unconfigured SMTP credentials (isolated from real .env credentials)
+    # Unconfigured SMTP / API credentials (isolated from real .env credentials)
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "")
     monkeypatch.setenv("BANTAYNET_SMTP_PASSWORD", "")
     monkeypatch.setenv("GMAIL_USER", "")
     monkeypatch.setenv("BANTAYNET_SMTP_USER", "")
+    monkeypatch.setenv("MAILTRAP_API_TOKEN", "")
+    monkeypatch.setenv("MAILTRAP_TOKEN", "")
+    monkeypatch.setenv("RESEND_API_KEY", "")
 
     ok2, msg2 = send_2fa_otp_email("test@example.com", "123456")
     assert ok2 is False
