@@ -6,7 +6,7 @@
   <title>{% block title %}BantayNet - Suspicious Activity Detection{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body data-logged-in="{{ 'true' if current_user else 'false' }}" data-inactivity-timeout="{{ (session_inactivity_minutes | default(15)) * 60 * 1000 }}" data-logout-url="{{ url_for('logout') if current_user else '' }}">
   <!-- Header -->
   <header>
     <div class="navbar">
@@ -364,63 +364,65 @@
         sb.classList.add('collapsed');
       }
 
-      {% if current_user %}
       // Automated Idle Inactivity Warning & Auto-Logout (15-Minute Policy)
-      const TIMEOUT_MS = {{ (session_inactivity_minutes | default(15)) * 60 * 1000 }};
-      const WARNING_MS = 60 * 1000; // Warn 60s before auto-logout
-      let lastActivityTime = Date.now();
-      let warningTimer = null;
-      let logoutTimer = null;
+      const body = document.body;
+      if (body && body.dataset.loggedIn === 'true') {
+        const TIMEOUT_MS = parseInt(body.dataset.inactivityTimeout || '900000', 10);
+        const WARNING_MS = 60 * 1000; // Warn 60s before auto-logout
+        const logoutUrl = body.dataset.logoutUrl || '/logout';
+        let lastActivityTime = Date.now();
+        let warningTimer = null;
+        let logoutTimer = null;
 
-      function resetIdleTimers() {
-        lastActivityTime = Date.now();
-        if (warningTimer) clearTimeout(warningTimer);
-        if (logoutTimer) clearTimeout(logoutTimer);
+        function resetIdleTimers() {
+          lastActivityTime = Date.now();
+          if (warningTimer) clearTimeout(warningTimer);
+          if (logoutTimer) clearTimeout(logoutTimer);
 
-        const banner = document.getElementById('idleWarningBanner');
-        if (banner) banner.style.display = 'none';
+          const banner = document.getElementById('idleWarningBanner');
+          if (banner) banner.style.display = 'none';
 
-        warningTimer = setTimeout(showIdleWarning, TIMEOUT_MS - WARNING_MS);
-        logoutTimer = setTimeout(performAutoLogout, TIMEOUT_MS);
-      }
-
-      function showIdleWarning() {
-        let banner = document.getElementById('idleWarningBanner');
-        if (!banner) {
-          banner = document.createElement('div');
-          banner.id = 'idleWarningBanner';
-          banner.style.position = 'fixed';
-          banner.style.bottom = '20px';
-          banner.style.right = '20px';
-          banner.style.zIndex = '9999';
-          banner.style.padding = '1rem 1.25rem';
-          banner.style.background = 'rgba(239, 68, 68, 0.95)';
-          banner.style.color = '#ffffff';
-          banner.style.borderRadius = '8px';
-          banner.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
-          banner.style.fontSize = '0.85rem';
-          banner.style.display = 'flex';
-          banner.style.alignItems = 'center';
-          banner.style.gap = '0.75rem';
-          banner.innerHTML = `
-            <span>⚠️ <strong>Security Notice:</strong> Inactivity detected. Auto-logout in 60s.</span>
-            <button class="btn btn-secondary" onclick="resetIdleTimers()" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; background: #ffffff; color: #000000; border: none;">Stay Signed In</button>
-          `;
-          document.body.appendChild(banner);
+          warningTimer = setTimeout(showIdleWarning, TIMEOUT_MS - WARNING_MS);
+          logoutTimer = setTimeout(performAutoLogout, TIMEOUT_MS);
         }
-        banner.style.display = 'flex';
+
+        function showIdleWarning() {
+          let banner = document.getElementById('idleWarningBanner');
+          if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'idleWarningBanner';
+            banner.style.position = 'fixed';
+            banner.style.bottom = '20px';
+            banner.style.right = '20px';
+            banner.style.zIndex = '9999';
+            banner.style.padding = '1rem 1.25rem';
+            banner.style.background = 'rgba(239, 68, 68, 0.95)';
+            banner.style.color = '#ffffff';
+            banner.style.borderRadius = '8px';
+            banner.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+            banner.style.fontSize = '0.85rem';
+            banner.style.display = 'flex';
+            banner.style.alignItems = 'center';
+            banner.style.gap = '0.75rem';
+            banner.innerHTML = `
+              <span>⚠️ <strong>Security Notice:</strong> Inactivity detected. Auto-logout in 60s.</span>
+              <button class="btn btn-secondary" onclick="resetIdleTimers()" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; background: #ffffff; color: #000000; border: none;">Stay Signed In</button>
+            `;
+            document.body.appendChild(banner);
+          }
+          banner.style.display = 'flex';
+        }
+
+        function performAutoLogout() {
+          window.location.href = logoutUrl;
+        }
+
+        ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function(evt) {
+          window.addEventListener(evt, resetIdleTimers, { passive: true });
+        });
+
+        resetIdleTimers();
       }
-
-      function performAutoLogout() {
-        window.location.href = "{{ url_for('logout') }}";
-      }
-
-      ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
-        window.addEventListener(evt, resetIdleTimers, { passive: true });
-      });
-
-      resetIdleTimers();
-      {% endif %}
     });
   </script>
 </body>
