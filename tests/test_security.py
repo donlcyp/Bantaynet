@@ -377,11 +377,15 @@ def test_email_validation_and_duplicate_prevention(tmp_path):
         create_user("user_three", "ValidPass123!", "viewer", email="FIRST_OPERATOR@SOC.CORP", db_path=test_db)
 
 
-def test_two_factor_auth_email_and_backup_code(test_app_client):
+def test_two_factor_auth_email_and_backup_code(test_app_client, monkeypatch):
     """Verify Two-Step Login Experience: Step 1 password -> Step 2 2FA verification."""
     import secrets
     from src.db import create_user, toggle_user_2fa, get_user_by_username
     from werkzeug.security import generate_password_hash
+
+    # Mock real external email dispatch during test runs
+    monkeypatch.setattr("dashboard.app.send_2fa_otp_email", lambda *a, **kw: (True, "Dispatched"))
+    monkeypatch.setattr("dashboard.app.send_account_created_email", lambda *a, **kw: (True, "Dispatched"))
 
     uname = f"mfa_{secrets.token_hex(4)}"
     email = f"{uname}@soc.corp"
