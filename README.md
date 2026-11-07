@@ -24,21 +24,6 @@
 
 ---
 
-## 🎯 Detection Rules & MITRE ATT&CK Mapping
-
-Configured via [`rules/rules.yaml`](rules/rules.yaml):
-
-| Rule | Description | Trigger Threshold | MITRE ATT&CK |
-|---|---|---|---|
-| **Port Scan** (`port_scan`) | Rapid port probing on a single host | $\ge 50$ distinct ports in $\le 5$ s | **[T1046](https://attack.mitre.org/techniques/T1046/)** (Discovery) |
-| **Slow Scan** (`slow_scan`) | Low-and-slow reconnaissance | $\ge 20$ ports across $300$ s | **[T1046](https://attack.mitre.org/techniques/T1046/)** (Discovery) |
-| **Host Sweep** (`host_sweep`) | Horizontal probe across multiple hosts | $\ge 50$ target IPs in $\le 10$ s | **[T1018](https://attack.mitre.org/techniques/T1018/)** (Discovery) |
-| **SYN Burst** (`syn_burst`) | SYN flood / connection exhaustion | $\ge 100$ SYNs/sec | **[T1498](https://attack.mitre.org/techniques/T1498/)** (DoS) |
-| **Suspicious Flags** (`suspicious_flags`) | Stealth scans (`NULL`, `XMAS`, `FIN`) | Any illegal flag combination | **[T1046](https://attack.mitre.org/techniques/T1046/)** (Discovery) |
-| **Cleartext Protocol** (`cleartext`) | Insecure services (Telnet:23, FTP:21, POP3:110) | Any observed packet | **Policy Violation** |
-| **ICMP Flood** (`icmp_flood`) | Volumetric ping flood | $\ge 80$ packets/sec | **[T1498](https://attack.mitre.org/techniques/T1498/)** (DoS) |
-
----
 
 ## 🚀 Quickstart Guide
 
