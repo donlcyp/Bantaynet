@@ -85,6 +85,65 @@ def _connect_smtp(server_host: str, port: int, use_tls: bool = True, timeout: in
         raise
 
 
+def _send_via_https_api(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    text_content: str,
+    sender: str = "",
+) -> tuple[bool, str] | None:
+    """Send email via Resend HTTPS REST API (port 443) if RESEND_API_KEY is configured.
+
+    Render free tier blocks all outbound SMTP ports (25, 465, 587). Port 443 (HTTPS)
+    is never blocked. Returns None if RESEND_API_KEY is not configured.
+    """
+    api_key = (os.environ.get("RESEND_API_KEY") or "").strip()
+    if not api_key:
+        return None
+
+    import json
+    import urllib.error
+    import urllib.request
+
+    from_email = (
+        sender
+        or os.environ.get("RESEND_FROM_EMAIL")
+        or "BantayNet SOC <onboarding@resend.dev>"
+    )
+
+    payload = {
+        "from": from_email,
+        "to": [to_email],
+        "subject": subject,
+        "html": html_content,
+        "text": text_content,
+    }
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "BantayNet-SOC/1.0",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            logger.info("Dispatched email to %s via Resend HTTPS API (id: %s)", to_email, data.get("id"))
+            return True, "Email dispatched successfully via HTTPS API."
+    except urllib.error.HTTPError as exc:
+        err_body = exc.read().decode("utf-8", errors="ignore")
+        logger.error("Resend API HTTP %s: %s", exc.code, err_body)
+        return False, f"HTTPS Email API error ({exc.code}): {err_body}"
+    except Exception as exc:
+        logger.error("Resend API failed: %s", exc)
+        return False, f"HTTPS Email API failed: {exc}"
+
+
 def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tuple[bool, str]:
     """Dispatch a 6-digit 2FA verification code to the operator's email address via Gmail/SMTP.
 
@@ -143,6 +202,11 @@ def send_2fa_otp_email(to_email: str, otp_code: str, username: str = "") -> tupl
 
         msg.attach(MIMEText(text_content, "plain"))
         msg.attach(MIMEText(html_content, "html"))
+
+        # Priority 1: Check HTTPS REST API (Port 443 - works on Render free tier)
+        api_res = _send_via_https_api(to_email, msg["Subject"], html_content, text_content, conf["sender"])
+        if api_res is not None:
+            return api_res
 
         server = _connect_smtp(conf["server"], conf["port"], use_tls=conf["use_tls"], timeout=10)
         if conf["user"] and conf["password"]:
@@ -238,6 +302,11 @@ def send_account_created_email(
         msg.attach(MIMEText(text_content, "plain"))
         msg.attach(MIMEText(html_content, "html"))
 
+        # Priority 1: Check HTTPS REST API (Port 443 - works on Render free tier)
+        api_res = _send_via_https_api(to_email, msg["Subject"], html_content, text_content, conf["sender"])
+        if api_res is not None:
+            return api_res
+
         server = _connect_smtp(conf["server"], conf["port"], use_tls=conf["use_tls"], timeout=10)
         if conf["user"] and conf["password"]:
             server.login(conf["user"], conf["password"])
@@ -329,6 +398,17 @@ def test_smtp_connection(recipient_email: str) -> tuple[bool, str]:
     to_email = (recipient_email or "").strip()
     if not to_email:
         return False, "Recipient email address is required."
+
+    # Priority 1: Check HTTPS REST API if configured
+    if os.environ.get("RESEND_API_KEY", "").strip():
+        api_res = _send_via_https_api(
+            to_email,
+            "[BantayNet SOC] HTTPS Email Delivery Test",
+            "<h3>HTTPS Email Delivery Successful</h3><p>BantayNet cloud email delivery is operational via HTTPS (Port 443).</p>",
+            "HTTPS Email Delivery Successful",
+        )
+        if api_res is not None:
+            return api_res
 
     conf = _get_smtp_credentials()
     if not conf["password"]:
