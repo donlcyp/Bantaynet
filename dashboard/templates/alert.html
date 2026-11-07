@@ -28,7 +28,7 @@
       </p>
     </div>
     {% if current_user and current_user.role in ['admin', 'analyst'] %}
-    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+    <div class="alert-actions-group" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
       <a href="{{ url_for('alert_report_pdf', alert_id=alert.id) }}" class="btn btn-secondary">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -79,7 +79,7 @@
   {% if current_user and current_user.role == 'analyst' %}
   <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" style="margin-top: 1rem;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div style="display: grid; grid-template-columns: 220px 1fr auto; gap: 1rem; align-items: start;">
+    <div class="triage-form-grid" style="display: grid; grid-template-columns: 220px 1fr auto; gap: 1rem; align-items: start;">
       <div>
         <label for="statusSelect" style="display:block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">Change Status</label>
         <select name="status" id="statusSelect" class="form-control" style="width: 100%;">

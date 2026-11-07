@@ -785,18 +785,91 @@ select.form-control option {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Mobile Drawer Backdrop */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 85;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.sidebar-backdrop.active {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-mobile-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.75rem;
+}
+
+.sidebar-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.sidebar-close-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 @media (max-width: 900px) {
+  body.mobile-menu-open {
+    overflow: hidden;
+  }
+
   .app-sidebar {
     position: fixed;
     top: 62px;
     bottom: 0;
     left: 0;
+    width: 280px;
+    max-width: 85vw;
+    height: calc(100vh - 62px);
+    z-index: 90;
     transform: translateX(-100%);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.65);
+    background: var(--sidebar-bg);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .app-sidebar.open {
     transform: translateX(0);
+  }
+
+  .sidebar-mobile-header {
+    display: flex;
+  }
+
+  .app-layout {
+    display: block;
+  }
+
+  .main-content-wrapper {
+    width: 100%;
+    margin-left: 0 !important;
   }
 }
 
@@ -1032,6 +1105,202 @@ select.form-control option {
 [data-theme="light"] .password-checklist {
   background: #f8fafc;
   border-color: #e2e8f0;
+}
+
+/* --------------------------------------------------------------------------
+ * Comprehensive Mobile & Touch Responsiveness
+ * -------------------------------------------------------------------------- */
+
+/* Auth Cards */
+.auth-card {
+  max-width: 440px;
+  margin: 3rem auto 2rem;
+  padding: 2.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+@media (max-width: 768px) {
+  /* Container layout */
+  .container,
+  .main-content-wrapper main.container,
+  .app-layout.no-sidebar .main-content-wrapper main.container {
+    padding: 0 0.85rem;
+    margin: 1rem auto;
+  }
+
+  /* Stat cards - tidy 2x2 grid */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .stat-card {
+    padding: 0.85rem;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+    margin-top: 0.35rem;
+  }
+
+  .stat-label {
+    font-size: 0.72rem;
+  }
+
+  /* Charts */
+  .charts-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .chart-container {
+    height: 200px;
+  }
+
+  /* Responsive Filter Form */
+  .filter-form {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .filter-form .btn {
+    width: 100%;
+  }
+
+  /* Form Controls Touch Targets (Min 42px touch height) */
+  .form-control,
+  .btn {
+    min-height: 42px;
+    font-size: 16px; /* Prevents auto-zoom in iOS Safari */
+  }
+
+  /* Detail Grids */
+  .detail-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  /* Rule Config inputs grid */
+  .rule-inputs-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.65rem !important;
+  }
+
+  /* Triage Form Grid on Alert Details */
+  .triage-form-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.85rem !important;
+  }
+
+  .triage-form-grid .btn {
+    width: 100%;
+  }
+
+  .alert-actions-group {
+    width: 100%;
+  }
+
+  .alert-actions-group .btn,
+  .alert-actions-group form {
+    width: 100%;
+  }
+
+  .alert-actions-group form button {
+    width: 100%;
+  }
+
+  /* Tables horizontal scrolling */
+  .table-responsive {
+    -webkit-overflow-scrolling: touch;
+    border-radius: 6px;
+    position: relative;
+    max-width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.65rem 0.75rem;
+    font-size: 0.82rem;
+  }
+
+  /* Flash notification banners */
+  .alert {
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+  }
+}
+
+@media (max-width: 520px) {
+  /* Navbar */
+  .navbar {
+    padding: 0 0.65rem;
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
+
+  .brand-name {
+    font-size: 1.15rem;
+  }
+
+  .user-username {
+    display: none;
+  }
+
+  .signout-text {
+    display: none;
+  }
+
+  .nav-signout-btn {
+    padding: 0.45rem !important;
+    min-height: 38px;
+    min-width: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .theme-toggle-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* Mobile Auth Card */
+  .auth-card {
+    margin: 1rem 0.25rem;
+    padding: 1.35rem 1rem;
+    border-radius: 10px;
+    width: auto;
+    box-sizing: border-box;
+  }
+
+  /* Modal */
+  .modal-content {
+    width: 95%;
+    padding: 1.25rem 1rem;
+    margin: 0.5rem;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 10px;
+  }
+
+  .dropzone {
+    padding: 1.5rem 0.75rem;
+  }
+
+  /* Password Checklist */
+  .password-checklist {
+    padding: 0.65rem 0.85rem;
+    font-size: 0.78rem;
+  }
 }
 
 

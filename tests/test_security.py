@@ -503,7 +503,7 @@ def test_first_time_password_change_flow(test_app_client):
     assert authenticate_user(uname, "BrandNewPermanentPass999!") is not None
 
 
-def test_email_notification_error_handling():
+def test_email_notification_error_handling(monkeypatch):
     """Verify email dispatcher functions gracefully handle unconfigured or invalid email without throwing exceptions."""
     from src.notifier import send_2fa_otp_email, send_account_created_email, test_smtp_connection
 
@@ -512,7 +512,12 @@ def test_email_notification_error_handling():
     assert ok1 is False
     assert "missing" in msg1.lower()
 
-    # Unconfigured SMTP credentials
+    # Unconfigured SMTP credentials (isolated from real .env credentials)
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "")
+    monkeypatch.setenv("BANTAYNET_SMTP_PASSWORD", "")
+    monkeypatch.setenv("GMAIL_USER", "")
+    monkeypatch.setenv("BANTAYNET_SMTP_USER", "")
+
     ok2, msg2 = send_2fa_otp_email("test@example.com", "123456")
     assert ok2 is False
     assert "not configured" in msg2.lower()

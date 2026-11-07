@@ -63,7 +63,7 @@
           </div>
           <div>
             <div class="brand-name">Bantay<span>Net</span></div>
-            <div style="font-size: 0.65rem; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase;">IntrusionAlert System</div>
+            <div class="brand-subtitle" style="font-size: 0.65rem; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase;">IntrusionAlert System</div>
           </div>
         </a>
       </div>
@@ -88,21 +88,21 @@
         </button>
 
         {% if current_user %}
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
-          <div style="font-size: 0.85rem; text-align: right; line-height: 1.2;">
-            <span style="font-weight: 600; color: var(--text-main);">{{ current_user.username }}</span>
+        <div class="nav-user-cluster" style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="user-greeting" style="font-size: 0.85rem; text-align: right; line-height: 1.2;">
+            <span class="user-username" style="font-weight: 600; color: var(--text-main);">{{ current_user.username }}</span>
             <span class="badge role-badge role-badge-{{ current_user.role }}">
               {{ current_user.role|upper }}
             </span>
           </div>
 
-          <a href="{{ url_for('logout') }}" class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.82rem;" title="Sign Out">
+          <a href="{{ url_for('logout') }}" class="btn btn-secondary nav-signout-btn" style="padding: 0.4rem 0.75rem; font-size: 0.82rem;" title="Sign Out">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
               <polyline points="16 17 21 12 16 7"></polyline>
               <line x1="21" y1="12" x2="9" y2="12"></line>
             </svg>
-            <span>Sign Out</span>
+            <span class="signout-text">Sign Out</span>
           </a>
         </div>
         {% endif %}
@@ -110,12 +110,23 @@
     </div>
   </header>
 
+  <!-- Mobile Backdrop Overlay for Drawer -->
+  <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
 
   <!-- App Layout with Sidebar -->
   <div class="app-layout {% if not current_user %}no-sidebar{% endif %}">
     {% if current_user %}
     <aside id="appSidebar" class="app-sidebar">
       <div class="sidebar-inner">
+        <!-- Mobile Drawer Close Header -->
+        <div class="sidebar-mobile-header">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">Navigation Menu</span>
+          </div>
+          <button type="button" class="sidebar-close-btn" onclick="toggleSidebar()" aria-label="Close navigation" title="Close menu">&times;</button>
+        </div>
+
         <!-- Navigation Section -->
         <div class="sidebar-section-label">Navigation</div>
         <nav class="sidebar-nav">
@@ -367,14 +378,33 @@
       }
     }
 
-    // Sidebar toggle
+    // Sidebar toggle (Responsive for Desktop & Mobile)
     function toggleSidebar() {
       const sb = document.getElementById('appSidebar');
-      if (sb) {
-        sb.classList.toggle('collapsed');
+      const backdrop = document.getElementById('sidebarBackdrop');
+      if (!sb) return;
+
+      const isMobile = window.innerWidth <= 900;
+      if (isMobile) {
         sb.classList.toggle('open');
+        if (backdrop) backdrop.classList.toggle('active');
+        document.body.classList.toggle('mobile-menu-open');
+      } else {
+        sb.classList.toggle('collapsed');
         const isCollapsed = sb.classList.contains('collapsed');
         localStorage.setItem('bantaynet_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+      }
+    }
+
+    function closeSidebarOnMobile() {
+      if (window.innerWidth <= 900) {
+        const sb = document.getElementById('appSidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (sb && sb.classList.contains('open')) {
+          sb.classList.remove('open');
+          if (backdrop) backdrop.classList.remove('active');
+          document.body.classList.remove('mobile-menu-open');
+        }
       }
     }
 
@@ -412,6 +442,13 @@
       if (pref === 'true' && sb && window.innerWidth > 900) {
         sb.classList.add('collapsed');
       }
+
+      // Auto-close mobile sidebar when clicking a navigation link
+      document.querySelectorAll('.sidebar-nav a').forEach(function(link) {
+        link.addEventListener('click', function() {
+          closeSidebarOnMobile();
+        });
+      });
 
       // Automated Idle Inactivity Warning & Auto-Logout (15-Minute Policy)
       const body = document.body;
