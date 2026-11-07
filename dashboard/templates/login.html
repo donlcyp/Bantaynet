@@ -72,10 +72,10 @@
   </script>
 
   <div style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color); font-size: 0.78rem; color: var(--text-dim); line-height: 1.6;">
-    <div style="font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem;">Default Security Roles:</div>
-    <div>&bull; <strong style="color: #38bdf8;">Admin:</strong> <code>admin</code> / <code>admin123!</code> (Full control, manage users)</div>
-    <div>&bull; <strong style="color: #34d399;">Analyst:</strong> <code>analyst</code> / <code>analyst123!</code> (Upload PCAPs, triage alerts)</div>
-    <div>&bull; <strong style="color: #a78bfa;">Viewer:</strong> <code>viewer</code> / <code>viewer123!</code> (Read-only forensics & export)</div>
+    <div style="font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem;">Role-Based Access Control (RBAC):</div>
+    <div>&bull; <strong style="color: #38bdf8;">IT Administrator:</strong> Configure rules/thresholds, manage DB &amp; evidence, view all alerts/reports</div>
+    <div>&bull; <strong style="color: #34d399;">Security Analyst:</strong> Upload &amp; analyze PCAPs, investigate evidence packets, filter &amp; export CSV</div>
+    <div>&bull; <strong style="color: #a78bfa;">Viewer:</strong> View dashboard summary and read-only alert details</div>
   </div>
 </div>
 {% endblock %}

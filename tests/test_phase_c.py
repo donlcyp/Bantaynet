@@ -232,9 +232,22 @@ def test_admin_rules_and_storage_management(auth_db: Path, tmp_path: Path, monke
         assert b"Access restricted" in analyst_client.get("/settings/rules", follow_redirects=True).data
         assert b"Access restricted" in analyst_client.get("/settings/storage", follow_redirects=True).data
 
-    # 3. Admin can configure detection rules/thresholds and manage database & evidence files
+    # 3. Admin can configure detection rules/thresholds and manage database & evidence files,
+    #    and view alerts/evidence/reports, while PCAP upload, triage, and CSV export belong strictly to Analyst
     with app.test_client() as admin_client:
         admin_client.post("/login", data={"username": "admin", "password": "admin123!"})
+
+        # Admin is restricted from Analyst-only actions (export CSV, triage status update)
+        assert b"Access restricted" in admin_client.get("/export.csv", follow_redirects=True).data
+        assert b"Access restricted" in admin_client.post(
+            f"/alert/{aid}/status",
+            data={"status": "resolved", "analyst_note": "Admin attempt"},
+            follow_redirects=True,
+        ).data
+
+        # Admin can view evidence and PDF reports
+        assert admin_client.get(f"/evidence/{aid}").status_code == 200
+        assert admin_client.get(f"/alert/{aid}/report.pdf").status_code == 200
 
         res_rules_get = admin_client.get("/settings/rules")
         assert res_rules_get.status_code == 200

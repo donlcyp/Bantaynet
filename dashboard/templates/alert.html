@@ -76,7 +76,7 @@
     </span>
   </div>
 
-  {% if current_user and current_user.role in ['admin', 'analyst'] %}
+  {% if current_user and current_user.role == 'analyst' %}
   <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" style="margin-top: 1rem;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div style="display: grid; grid-template-columns: 220px 1fr auto; gap: 1rem; align-items: start;">
@@ -109,7 +109,7 @@
       <div style="font-size: 0.88rem; color: var(--text-main); white-space: pre-wrap;">{{ alert.analyst_note or 'No notes recorded.' }}</div>
     </div>
     <div style="font-size: 0.78rem; color: #a78bfa;">
-      <em>Read-only view: Analyst or Admin credentials required to modify incident status and triage notes.</em>
+      <em>Read-only view: Security Analyst credentials required to modify incident status and triage notes.</em>
     </div>
   </div>
   {% endif %}

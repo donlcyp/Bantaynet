@@ -34,9 +34,17 @@
       <select name="action" id="action" class="form-control">
         <option value="">All Actions</option>
         <option value="login" {% if filter_action == 'login' %}selected{% endif %}>User Login</option>
+        <option value="failed_login" {% if filter_action == 'failed_login' %}selected{% endif %}>Failed Login</option>
         <option value="logout" {% if filter_action == 'logout' %}selected{% endif %}>User Logout</option>
-        <option value="upload_pcap" {% if filter_action == 'upload_pcap' %}selected{% endif %}>PCAP Upload & Analysis</option>
+        <option value="upload_pcap" {% if filter_action == 'upload_pcap' %}selected{% endif %}>PCAP Upload &amp; Analysis</option>
         <option value="update_alert" {% if filter_action == 'update_alert' %}selected{% endif %}>Alert Triage Update</option>
+        <option value="update_rules" {% if filter_action == 'update_rules' %}selected{% endif %}>Rules &amp; Thresholds Updated</option>
+        <option value="clear_database" {% if filter_action == 'clear_database' %}selected{% endif %}>Database Cleared</option>
+        <option value="delete_alert" {% if filter_action == 'delete_alert' %}selected{% endif %}>Alert Deleted</option>
+        <option value="delete_file" {% if filter_action == 'delete_file' %}selected{% endif %}>Evidence/Capture File Deleted</option>
+        <option value="purge_files" {% if filter_action == 'purge_files' %}selected{% endif %}>Evidence/Capture Files Purged</option>
+        <option value="export_pdf" {% if filter_action == 'export_pdf' %}selected{% endif %}>Incident PDF Exported</option>
+        <option value="export_summary_pdf" {% if filter_action == 'export_summary_pdf' %}selected{% endif %}>Summary PDF Exported</option>
         <option value="create_user" {% if filter_action == 'create_user' %}selected{% endif %}>User Created</option>
         <option value="update_role" {% if filter_action == 'update_role' %}selected{% endif %}>Role Modified</option>
         <option value="delete_user" {% if filter_action == 'delete_user' %}selected{% endif %}>User Deleted</option>

@@ -133,8 +133,8 @@ def security_and_auth_middleware():
     if user_id is not None:
         g.current_user = get_user_by_id(user_id)
     elif app.config.get("TESTING") and not app.config.get("FORCE_AUTH_TESTING"):
-        # Auto-mock admin user for existing test fixtures
-        g.current_user = {"id": 1, "username": "admin", "role": "admin"}
+        # Auto-mock user for legacy non-RBAC test fixtures
+        g.current_user = {"id": 1, "username": "analyst", "role": "analyst"}
     else:
         g.current_user = None
 
@@ -439,12 +439,16 @@ def remove_user(user_id: int):
 @app.route("/")
 @login_required
 def index():
-    rule = request.args.get("rule", "").strip() or None
-    severity = request.args.get("severity", "").strip() or None
-    src_ip = request.args.get("src_ip", "").strip() or None
-    status = request.args.get("status", "").strip() or None
-    client_name = request.args.get("client_name", "").strip() or None
-    search = request.args.get("search", "").strip() or None
+    user_role = g.current_user.get("role") if getattr(g, "current_user", None) else "viewer"
+    if user_role in ("admin", "analyst"):
+        rule = request.args.get("rule", "").strip() or None
+        severity = request.args.get("severity", "").strip() or None
+        src_ip = request.args.get("src_ip", "").strip() or None
+        status = request.args.get("status", "").strip() or None
+        client_name = request.args.get("client_name", "").strip() or None
+        search = request.args.get("search", "").strip() or None
+    else:
+        rule = severity = src_ip = status = client_name = search = None
 
     init_db()
     stats = get_summary_stats()
@@ -532,7 +536,7 @@ def alert_detail(alert_id: int):
 
 
 @app.route("/alert/<int:alert_id>/status", methods=["POST"])
-@role_required("admin", "analyst")
+@role_required("analyst")
 def update_alert_status(alert_id: int):
     alert = get_alert_by_id(alert_id)
     if not alert:
@@ -558,7 +562,7 @@ def update_alert_status(alert_id: int):
 
 
 @app.route("/upload", methods=["POST"])
-@role_required("admin", "analyst")
+@role_required("analyst")
 def upload_pcap():
     if "pcap_file" not in request.files:
         flash("No file part in upload request.", "error")
@@ -629,7 +633,7 @@ def download_evidence(alert_id: int):
 
 
 @app.route("/export.csv")
-@role_required("admin", "analyst")
+@role_required("analyst")
 def export_csv():
     rule = request.args.get("rule", "").strip() or None
     severity = request.args.get("severity", "").strip() or None
@@ -775,6 +779,12 @@ def manage_rules():
 
             raw_ips = request.form.get("allowlist_ips", "")
             ips_list = [ip.strip() for ip in re.split(r"[\n,]+", raw_ips) if ip.strip()]
+            import ipaddress
+            for ip_entry in ips_list:
+                try:
+                    ipaddress.ip_network(ip_entry, strict=False)
+                except ValueError as exc:
+                    raise ConfigError(f"Invalid IP or CIDR in allowlist: '{ip_entry}'") from exc
 
             updates = {
                 "port_scan": {

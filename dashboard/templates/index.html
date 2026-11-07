@@ -70,6 +70,7 @@
   </div>
 </div>
 
+{% if current_user and current_user.role in ['admin', 'analyst'] %}
 <!-- Filters Panel (Collapsible) -->
 {% set active_filters_count = (1 if filters.rule else 0) + (1 if filters.severity else 0) + (1 if filters.status else 0) + (1 if filters.client_name else 0) + (1 if filters.src_ip else 0) + (1 if filters.search else 0) %}
 <div class="panel" id="filterPanel" data-active-filters="{{ active_filters_count }}">
@@ -157,6 +158,7 @@
     </form>
   </div>
 </div>
+{% endif %}
 
 
 <!-- Alerts Table -->
@@ -258,9 +260,11 @@
   {% else %}
   <div class="empty-state">
     <h3>No Suspicious Alerts Found</h3>
+    {% if current_user and current_user.role == 'analyst' %}
     <p>Upload a capture file or adjust filter criteria above to inspect activity.</p>
-    {% if current_user and current_user.role in ['admin', 'analyst'] %}
     <button type="button" class="btn btn-primary" style="margin-top: 1rem;" onclick="openUploadModal()">Upload PCAP File</button>
+    {% else %}
+    <p>No suspicious alerts match the current view.</p>
     {% endif %}
   </div>
   {% endif %}
