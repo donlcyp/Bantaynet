@@ -245,6 +245,8 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_rule ON alerts(rule);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_src ON alerts(src_ip);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_id_desc ON alerts(id DESC);")
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS users (
@@ -293,6 +295,7 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_id_desc ON audit_logs(id DESC);")
             conn.close()
             _seed_default_users("mysql", conf)
             _INITIALIZED_TARGETS.add(target_key)
@@ -532,6 +535,28 @@ def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
 
 
 _DEFAULT_ADMIN_PW_CACHE: tuple[float, bool] | None = None
+_USER_CACHE: dict[int, tuple[float, dict[str, Any]]] = {}
+_USER_CACHE_TTL = 45.0  # seconds
+
+_STATS_CACHE: tuple[float, dict[str, Any]] | None = None
+_CHART_CACHE: tuple[float, dict[str, Any]] | None = None
+_AGGREGATE_CACHE_TTL = 15.0  # seconds
+
+
+def invalidate_user_cache(user_id: int | None = None) -> None:
+    """Invalidate cached user profiles from in-memory cache."""
+    global _USER_CACHE
+    if user_id is None:
+        _USER_CACHE.clear()
+    else:
+        _USER_CACHE.pop(user_id, None)
+
+
+def invalidate_aggregate_cache() -> None:
+    """Invalidate summary stats and chart data cache."""
+    global _STATS_CACHE, _CHART_CACHE
+    _STATS_CACHE = None
+    _CHART_CACHE = None
 
 
 def is_default_admin_password_active(db_path: Path | str | None = None) -> bool:
@@ -737,15 +762,22 @@ def authenticate_user(
 
 
 def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str, Any] | None:
-    """Retrieve user by ID without password_hash."""
+    """Retrieve user by ID without password_hash (cached 45s)."""
     # Check in-memory virtual test accounts
     for target in _get_static_test_accounts().values():
         if target["id"] == user_id:
             return _normalize_user_dict(target)
 
+    now = time.time()
+    if db_path is None and user_id in _USER_CACHE:
+        cached_ts, cached_user = _USER_CACHE[user_id]
+        if now - cached_ts < _USER_CACHE_TTL:
+            return cached_user.copy()
+
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
+    res: dict[str, Any] | None = None
     if engine == "mysql":
         try:
             conn = get_mysql_connection(conf)
@@ -753,13 +785,19 @@ def get_user_by_id(user_id: int, db_path: Path | str | None = None) -> dict[str,
                 cur.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
             conn.close()
-            return _normalize_user_dict(dict(row)) if row else None
+            res = _normalize_user_dict(dict(row)) if row else None
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
-    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-        row = conn.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE id = ?", (user_id,)).fetchone()
-        return _normalize_user_dict(dict(row)) if row else None
+    if res is None and (engine == "sqlite" or ACTIVE_ENGINE == "sqlite"):
+        with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+            row = conn.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users WHERE id = ?", (user_id,)).fetchone()
+            res = _normalize_user_dict(dict(row)) if row else None
+
+    if db_path is None and res is not None:
+        _USER_CACHE[user_id] = (now, res)
+
+    return res
 
 
 def get_user_by_username(username: str, db_path: Path | str | None = None) -> dict[str, Any] | None:
@@ -861,6 +899,7 @@ def update_user_password(
     db_path: Path | str | None = None,
 ) -> bool:
     """Update password hash and mandatory password change flag."""
+    invalidate_user_cache(user_id)
     if not new_password:
         raise ValueError("Password cannot be empty")
     pwd_hash = generate_password_hash(new_password)
@@ -906,6 +945,7 @@ def toggle_user_2fa(
     db_path: Path | str | None = None,
 ) -> bool:
     """Enable or disable 2FA for a user and optionally store emergency backup codes."""
+    invalidate_user_cache(user_id)
     enabled_val = 1 if enabled else 0
     codes_str = ",".join(backup_codes) if isinstance(backup_codes, list) else (backup_codes or "")
 
@@ -989,6 +1029,7 @@ def consume_backup_code(
 
 def update_user_role(user_id: int, role: str, db_path: Path | str | None = None) -> bool:
     """Update role for a user."""
+    invalidate_user_cache(user_id)
     if user_id in (-1, -2, -3):
         return True
 
@@ -1017,6 +1058,7 @@ def update_user_role(user_id: int, role: str, db_path: Path | str | None = None)
 
 def delete_user(user_id: int, db_path: Path | str | None = None) -> bool:
     """Delete a user by ID."""
+    invalidate_user_cache(user_id)
     if user_id in (-1, -2, -3):
         raise ValueError("Virtual test account cannot be deleted from database")
 
@@ -1153,6 +1195,7 @@ def insert_alert(
     analyst_note: str = "",
 ) -> int:
     """Insert a new alert record into active database (MySQL or SQLite)."""
+    invalidate_aggregate_cache()
     if detected_at is None:
         detected_at = datetime.now(timezone.utc).isoformat()
     if isinstance(packet_time, (int, float)):
@@ -1243,6 +1286,7 @@ def update_alert_status_and_note(
     db_path: Path | str | None = None,
 ) -> bool:
     """Update the status and analyst note for a specific alert."""
+    invalidate_aggregate_cache()
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
     now_str = datetime.now(timezone.utc).isoformat()
@@ -1403,7 +1447,14 @@ def get_alert_by_id(alert_id: int, db_path: Path | str | None = None) -> dict[st
 
 
 def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
-    """Return summary counters: total alerts, counts by severity, counts by rule."""
+    """Return summary counters: total alerts, counts by severity, counts by rule (cached 15s)."""
+    global _STATS_CACHE
+    now = time.time()
+    if db_path is None and _STATS_CACHE is not None:
+        cached_ts, cached_stats = _STATS_CACHE
+        if now - cached_ts < _AGGREGATE_CACHE_TTL:
+            return cached_stats.copy()
+
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
@@ -1421,14 +1472,17 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
 
             by_severity = {row["severity"]: row["cnt"] for row in by_sev_rows}
             by_rule = {row["rule"]: row["cnt"] for row in by_rule_rows}
-            return {
-                "engine": "MySQL (XAMPP)",
+            res = {
+                "engine": "PostgreSQL (Supabase)" if conf.get("is_postgres") else "MySQL (XAMPP)",
                 "total": total,
                 "high": by_severity.get("high", 0),
                 "medium": by_severity.get("medium", 0),
                 "low": by_severity.get("low", 0),
                 "by_rule": by_rule,
             }
+            if db_path is None:
+                _STATS_CACHE = (now, res)
+            return res
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
@@ -1445,7 +1499,7 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
         by_severity = {row["severity"]: row["cnt"] for row in by_sev_rows}
         by_rule = {row["rule"]: row["cnt"] for row in by_rule_rows}
 
-        return {
+        res = {
             "engine": "SQLite",
             "total": total,
             "high": by_severity.get("high", 0),
@@ -1453,10 +1507,20 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
             "low": by_severity.get("low", 0),
             "by_rule": by_rule,
         }
+        if db_path is None:
+            _STATS_CACHE = (now, res)
+        return res
 
 
 def get_chart_data(db_path: Path | str | None = None) -> dict[str, Any]:
-    """Return aggregated statistics formatted for frontend Chart.js rendering."""
+    """Return aggregated statistics formatted for frontend Chart.js rendering (cached 15s)."""
+    global _CHART_CACHE
+    now = time.time()
+    if db_path is None and _CHART_CACHE is not None:
+        cached_ts, cached_chart = _CHART_CACHE
+        if now - cached_ts < _AGGREGATE_CACHE_TTL:
+            return cached_chart.copy()
+
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
@@ -1465,17 +1529,18 @@ def get_chart_data(db_path: Path | str | None = None) -> dict[str, Any]:
         try:
             conn = get_mysql_connection(conf)
             with conn.cursor() as cur:
-                cur.execute("SELECT detected_at, rule, severity, status, src_ip FROM alerts ORDER BY id ASC")
+                cur.execute("SELECT detected_at, rule, severity, status, src_ip FROM alerts ORDER BY id DESC LIMIT 1000")
                 raw = cur.fetchall()
             conn.close()
-            rows = [dict(r) for r in raw]
+            rows = [dict(r) for r in reversed(raw)]
         except Exception as exc:
             _mark_sqlite_fallback(exc)
 
     if not rows and (engine == "sqlite" or ACTIVE_ENGINE == "sqlite"):
         with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
-            cur = conn.execute("SELECT detected_at, rule, severity, status, src_ip FROM alerts ORDER BY id ASC")
-            rows = [dict(r) for r in cur.fetchall()]
+            cur = conn.execute("SELECT detected_at, rule, severity, status, src_ip FROM alerts ORDER BY id DESC LIMIT 1000")
+            raw = cur.fetchall()
+            rows = [dict(r) for r in reversed(raw)]
 
     # Timeline bucketed by hour (or date if spans days)
     time_counter: Counter[str] = Counter()
@@ -1540,7 +1605,7 @@ def get_chart_data(db_path: Path | str | None = None) -> dict[str, Any]:
         ],
     }
 
-    return {
+    res = {
         "timeline": {"labels": timeline_labels, "counts": timeline_counts},
         "top_sources": {"labels": top_sources_labels, "counts": top_sources_counts},
         "by_rule": {"labels": by_rule_labels, "counts": by_rule_counts},
@@ -1548,10 +1613,14 @@ def get_chart_data(db_path: Path | str | None = None) -> dict[str, Any]:
         "by_status": by_status,
         "total": len(rows),
     }
+    if db_path is None:
+        _CHART_CACHE = (now, res)
+    return res
 
 
 def delete_alert(alert_id: int, db_path: Path | str | None = None) -> bool:
     """Delete a single alert record by ID."""
+    invalidate_aggregate_cache()
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 
@@ -1573,6 +1642,7 @@ def delete_alert(alert_id: int, db_path: Path | str | None = None) -> bool:
 
 def clear_alerts(db_path: Path | str | None = None) -> None:
     """Clear all stored alerts."""
+    invalidate_aggregate_cache()
     init_db(db_path)
     engine, conf = _get_active_engine(db_path)
 

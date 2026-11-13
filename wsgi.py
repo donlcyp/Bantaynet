@@ -35,9 +35,10 @@ if __name__ == "__main__":
     try:
         from waitress import serve
 
-        print(f"[*] Starting production Waitress server on http://{host}:{port}/")
+        threads = int(os.environ.get("WAITRESS_THREADS", 8))
+        print(f"[*] Starting production Waitress server on http://{host}:{port}/ ({threads} worker threads)")
         print("[!] Security notice: For authorized operations and lab traffic only.")
-        serve(app, host=host, port=port)
+        serve(app, host=host, port=port, threads=threads, channel_timeout=30)
     except ImportError:
         print("[!] Waitress not found. Serving with standard WSGI handler...")
         from wsgiref.simple_server import make_server

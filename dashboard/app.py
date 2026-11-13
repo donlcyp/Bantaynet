@@ -195,6 +195,25 @@ def apply_security_headers(response: Response) -> Response:
     if request.is_secure or os.environ.get("BANTAYNET_COOKIE_SECURE") == "1":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
+    # Browser caching optimization for static assets vs dynamic pages
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif "Cache-Control" not in response.headers:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+
+    # HTTP payload compression (gzip) for text/css, html, json responses
+    if not app.config.get("TESTING") and not response.direct_passthrough and "Content-Encoding" not in response.headers:
+        accept_encoding = request.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_encoding.lower():
+            content_type = response.content_type or ""
+            if any(t in content_type for t in ("text/", "application/json", "application/javascript")):
+                data = response.get_data()
+                if len(data) >= 1024:
+                    import gzip
+                    response.set_data(gzip.compress(data, compresslevel=6))
+                    response.headers["Content-Encoding"] = "gzip"
+                    response.headers["Content-Length"] = len(response.get_data())
+
     response.headers.pop("Server", None)
     return response
 
