@@ -89,4 +89,14 @@ notifications:
   recipient: "soc@example.com"
   min_severity: "high"
 
+integrations:
+  syslog:
+    enabled: false
+    host: "localhost"
+    port: 514
+    protocol: "udp"          # "udp" or "tcp"
+    format: "cef"            # "cef" or "json"
+    min_severity: "low"      # "low", "medium", or "high"
+
+
 

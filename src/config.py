@@ -8,7 +8,7 @@ the detector.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -126,6 +126,36 @@ class NotificationSettings:
 
 
 @dataclass(frozen=True)
+class SyslogSettings:
+    enabled: bool = False
+    host: str = "localhost"
+    port: int = 514
+    protocol: str = "udp"
+    format: str = "cef"
+    min_severity: str = "low"
+
+
+@dataclass(frozen=True)
+class TelegramSettings:
+    enabled: bool = False
+    min_severity: str = "high"
+
+
+@dataclass(frozen=True)
+class AbuseIPDBSettings:
+    enabled: bool = False
+    max_age_days: int = 90
+    cache_hours: int = 24
+
+
+@dataclass(frozen=True)
+class IntegrationsSettings:
+    syslog: SyslogSettings = field(default_factory=SyslogSettings)
+    telegram: TelegramSettings = field(default_factory=TelegramSettings)
+    abuseipdb: AbuseIPDBSettings = field(default_factory=AbuseIPDBSettings)
+
+
+@dataclass(frozen=True)
 class Config:
     port_scan: PortScanRule = field(default_factory=PortScanRule)
     slow_scan: SlowScanRule = field(default_factory=SlowScanRule)
@@ -139,6 +169,7 @@ class Config:
     evidence: EvidenceSettings = field(default_factory=EvidenceSettings)
     database: DatabaseSettings = field(default_factory=DatabaseSettings)
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
+    integrations: IntegrationsSettings = field(default_factory=IntegrationsSettings)
 
 
 # ---------------------------------------------------------------------------
@@ -201,14 +232,33 @@ def _build_section(section: str, cls: type, raw: Any) -> Any:
     kwargs: dict[str, Any] = {}
     defaults = cls()
     for key, value in raw.items():
-        if key == "ports":
+        field_default = getattr(defaults, key)
+        field_type = type(field_default)
+        if is_dataclass(field_default):
+            kwargs[key] = _build_section(f"{section}.{key}", field_type, value)
+        elif key == "ports":
             kwargs[key] = _parse_ports(section, value)
-        elif key == "severity":
+        elif key in ("severity", "min_severity"):
             if value not in SEVERITIES:
-                raise ConfigError(f"{section}.severity must be one of {SEVERITIES}, got {value!r}")
+                raise ConfigError(f"{section}.{key} must be one of {SEVERITIES}, got {value!r}")
             kwargs[key] = value
+        elif key == "protocol" and "syslog" in section:
+            val_str = str(value).lower()
+            if val_str not in ("udp", "tcp"):
+                raise ConfigError(f"{section}.protocol must be 'udp' or 'tcp', got {value!r}")
+            kwargs[key] = val_str
+        elif key == "format" and "syslog" in section:
+            val_str = str(value).lower()
+            if val_str not in ("cef", "json"):
+                raise ConfigError(f"{section}.format must be 'cef' or 'json', got {value!r}")
+            kwargs[key] = val_str
+        elif key == "port" and "syslog" in section:
+            val_int = _check_type(section, key, value, int)
+            if not 1 <= val_int <= 65535:
+                raise ConfigError(f"{section}.port must be between 1 and 65535, got {val_int}")
+            kwargs[key] = val_int
         else:
-            kwargs[key] = _check_type(section, key, value, type(getattr(defaults, key)))
+            kwargs[key] = _check_type(section, key, value, field_type)
     return cls(**kwargs)
 
 
@@ -235,6 +285,16 @@ def load_config(path: str | Path | None = None) -> Config:
     return Config(**{name: _build_section(name, factory, raw.get(name)) for name, factory in sections.items()})
 
 
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = _deep_merge(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
+
+
 def save_rules_config(updates: dict[str, Any], path: str | Path | None = None) -> Config:
     """Validate and persist updated rule & threshold settings to YAML (default: rules/rules.yaml)."""
     target_path = Path(path) if path is not None else DEFAULT_RULES_PATH
@@ -249,7 +309,7 @@ def save_rules_config(updates: dict[str, Any], path: str | Path | None = None) -
 
     for section, values in updates.items():
         if isinstance(values, dict) and isinstance(existing.get(section), dict):
-            existing[section] = {**existing[section], **values}
+            existing[section] = _deep_merge(existing[section], values)
         else:
             existing[section] = values
 
