@@ -626,8 +626,8 @@ def send_alert_email(
     try:
         rule = alert.get("rule", "Unknown Rule")
         severity = str(alert.get("severity", "high")).upper()
-        src_ip = alert.get("src_ip", "Unknown")
-        dst_ip = alert.get("dst_ip", "-")
+        src_ip = alert.get("src_ip") or alert.get("src", "Unknown")
+        dst_ip = alert.get("dst_ip") or alert.get("dst", "-")
         client = alert.get("client_name", "Default")
 
         msg = MIMEMultipart()
