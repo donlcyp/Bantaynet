@@ -509,8 +509,252 @@
 
         resetIdleTimers();
       }
+
+      // Auto-attach BantayLoading to all application forms
+      document.querySelectorAll('form').forEach(function(form) {
+        if (form.dataset.noLoading === 'true') return;
+        form.addEventListener('submit', function() {
+          if (form.checkValidity && !form.checkValidity()) return;
+
+          let title = "Processing Security Telemetry...";
+          let subtitle = "Executing transaction across detection modules...";
+
+          const action = (form.getAttribute('action') || '').toLowerCase();
+          const formId = (form.id || '').toLowerCase();
+
+          if (formId === 'uploadform' || action.includes('/upload')) {
+            const fileInput = form.querySelector('input[type="file"]');
+            const fileName = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0].name : 'Capture File';
+            title = `Analyzing Network Capture: ${fileName}`;
+            subtitle = "Streaming packet parser & running 7 detection engines...";
+            closeUploadModal();
+          } else if (action.includes('password')) {
+            title = "Securing Operator Credentials";
+            subtitle = "Encrypting passphrase with PBKDF2 hash & validating NIST policy...";
+          } else if (action.includes('login')) {
+            title = "Authenticating Operator";
+            subtitle = "Verifying security credentials & establishing encrypted session...";
+          } else if (action.includes('status')) {
+            title = "Updating Incident Triage";
+            subtitle = "Recording analyst investigation notes & syncing status...";
+          } else if (action.includes('rules')) {
+            title = "Applying Rule Thresholds";
+            subtitle = "Persisting detection window parameters to rules.yaml...";
+          } else if (action.includes('storage') || action.includes('delete') || action.includes('clear')) {
+            title = "Modifying Evidence Storage";
+            subtitle = "Updating disk records and database integrity checks...";
+          }
+
+          if (window.BantayLoading) {
+            window.BantayLoading.show({ title: title, subtitle: subtitle });
+          }
+        });
+      });
+
+      // Also attach to report export and PCAP download buttons for instant feedback
+      document.querySelectorAll('a[href*="/report.pdf"], a[href*="/export/csv"], a[href*="/evidence/"]').forEach(function(link) {
+        link.addEventListener('click', function() {
+          const href = link.getAttribute('href') || '';
+          let title = "Generating Forensic Report...";
+          let subtitle = "Compiling audit dossier & computing cryptographic checksums...";
+          if (href.includes('evidence')) {
+            title = "Preparing Evidence PCAP...";
+            subtitle = "Reading carved packet snippet for forensic download...";
+          }
+          if (window.BantayLoading) {
+            window.BantayLoading.show({ title: title, subtitle: subtitle });
+            // For file downloads that don't reload the page, auto-dismiss after 4 seconds
+            setTimeout(function() {
+              window.BantayLoading.hide();
+            }, 4000);
+          }
+        });
+      });
     });
+
+    // Global Cyber Loading Screen Controller
+    window.BantayLoading = (function() {
+      let timerInterval = null;
+      let startTime = 0;
+
+      const overlay = function() { return document.getElementById('bantayGlobalLoadingOverlay'); };
+      const titleEl = function() { return document.getElementById('bantayLoadingTitle'); };
+      const subtitleEl = function() { return document.getElementById('bantayLoadingSubtitle'); };
+      const timerEl = function() { return document.getElementById('bantayLoadingTimer'); };
+      const cancelBtn = function() { return document.getElementById('bantayLoadingCancelBtn'); };
+
+      function updatePhases(elapsedSec) {
+        const p1 = document.getElementById('phase1');
+        const p2 = document.getElementById('phase2');
+        const p3 = document.getElementById('phase3');
+        const p4 = document.getElementById('phase4');
+        if (!p1 || !p2 || !p3 || !p4) return;
+
+        if (elapsedSec < 1.8) {
+          p1.className = 'phase-step active';
+          p2.className = 'phase-step';
+          p3.className = 'phase-step';
+          p4.className = 'phase-step';
+        } else if (elapsedSec < 4.5) {
+          p1.className = 'phase-step done';
+          p2.className = 'phase-step active';
+          p3.className = 'phase-step';
+          p4.className = 'phase-step';
+        } else if (elapsedSec < 7.5) {
+          p1.className = 'phase-step done';
+          p2.className = 'phase-step done';
+          p3.className = 'phase-step active';
+          p4.className = 'phase-step';
+        } else {
+          p1.className = 'phase-step done';
+          p2.className = 'phase-step done';
+          p3.className = 'phase-step done';
+          p4.className = 'phase-step active';
+        }
+      }
+
+      function getDynamicSubtitle(baseSubtitle, elapsedSec) {
+        if (elapsedSec < 1.8) {
+          return baseSubtitle || "Ingesting packet capture & validating stream headers...";
+        } else if (elapsedSec < 4.5) {
+          return "Correlating sliding time-windows across MITRE ATT&CK detection rules...";
+        } else if (elapsedSec < 7.5) {
+          return "Carving forensic evidence packets & computing SHA-256 integrity checksums...";
+        } else if (elapsedSec < 12.0) {
+          return "Querying threat intelligence & persisting incident records to database...";
+        } else {
+          return "Processing large dataset stream. Finalizing security telemetry...";
+        }
+      }
+
+      function formatTime(ms) {
+        const totalSeconds = ms / 1000;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = (totalSeconds % 60).toFixed(1);
+        const mm = minutes < 10 ? '0' + minutes : minutes;
+        const ss = (totalSeconds % 60) < 10 ? '0' + seconds : seconds;
+        return `${mm}:${ss}s`;
+      }
+
+      function tick(baseSubtitle) {
+        const elapsedMs = performance.now() - startTime;
+        const elapsedSec = elapsedMs / 1000;
+        const t = timerEl();
+        if (t) t.textContent = formatTime(elapsedMs);
+
+        const s = subtitleEl();
+        if (s) s.textContent = getDynamicSubtitle(baseSubtitle, elapsedSec);
+
+        updatePhases(elapsedSec);
+
+        const btn = cancelBtn();
+        if (btn && elapsedSec > 15) {
+          btn.style.display = 'inline-block';
+        }
+      }
+
+      function show(options) {
+        options = options || {};
+        const ov = overlay();
+        if (!ov) return;
+
+        const title = options.title || "Processing Security Telemetry...";
+        const subtitle = options.subtitle || "Executing transaction across detection modules...";
+
+        const tEl = titleEl();
+        const sEl = subtitleEl();
+        const btn = cancelBtn();
+
+        if (tEl) tEl.textContent = title;
+        if (sEl) sEl.textContent = subtitle;
+        if (btn) btn.style.display = 'none';
+
+        startTime = performance.now();
+        updatePhases(0);
+
+        const t = timerEl();
+        if (t) t.textContent = "00:00.0s";
+
+        ov.classList.add('active');
+        ov.setAttribute('aria-hidden', 'false');
+
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(function() {
+          tick(subtitle);
+        }, 50);
+      }
+
+      function hide() {
+        const ov = overlay();
+        if (ov) {
+          ov.classList.remove('active');
+          ov.setAttribute('aria-hidden', 'true');
+        }
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+      }
+
+      // Hide loading screen if user navigates back in browser history
+      window.addEventListener('pageshow', function() {
+        hide();
+      });
+
+      return {
+        show: show,
+        hide: hide
+      };
+    })();
   </script>
+
+  <!-- Global Cyber Loading Screen Modal -->
+  <div id="bantayGlobalLoadingOverlay" class="bantay-loading-overlay" aria-hidden="true" role="status">
+    <div class="bantay-loading-modal">
+      <div class="radar-scanner-wrapper">
+        <div class="radar-conic-ring"></div>
+        <div class="radar-center-shield">
+          <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M50 8 L85 24 V52 C85 74 50 92 50 92 C50 92 15 74 15 52 V24 Z" fill="#091322" stroke="#38bdf8" stroke-width="4" stroke-linejoin="round" />
+            <path d="M30 50 Q50 34 70 50 Q50 66 30 50 Z" fill="#042f2e" stroke="#38bdf8" stroke-width="2.5" />
+            <circle cx="50" cy="50" r="7" fill="#38bdf8" />
+            <circle cx="50" cy="50" r="3" fill="#020617" />
+          </svg>
+        </div>
+      </div>
+
+      <h3 id="bantayLoadingTitle" class="loading-title">Processing Security Telemetry...</h3>
+      <p id="bantayLoadingSubtitle" class="loading-subtitle">Executing transaction across detection modules...</p>
+
+      <div class="loading-duration-cluster">
+        <span class="loading-duration-label">Elapsed:</span>
+        <span id="bantayLoadingTimer" class="loading-timer">00:00.0s</span>
+      </div>
+
+      <div class="loading-progress-track">
+        <div id="bantayLoadingBar" class="loading-progress-bar"></div>
+      </div>
+
+      <div class="loading-phases">
+        <div id="phase1" class="phase-step active">
+          <span class="phase-dot"></span> Ingestion
+        </div>
+        <div id="phase2" class="phase-step">
+          <span class="phase-dot"></span> Correlating
+        </div>
+        <div id="phase3" class="phase-step">
+          <span class="phase-dot"></span> Forensics
+        </div>
+        <div id="phase4" class="phase-step">
+          <span class="phase-dot"></span> Persistence
+        </div>
+      </div>
+
+      <button type="button" id="bantayLoadingCancelBtn" class="loading-cancel-btn" onclick="BantayLoading.hide()" style="display: none;">
+        Cancel / Dismiss
+      </button>
+    </div>
+  </div>
 </body>
 
 </html>
