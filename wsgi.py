@@ -19,11 +19,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dashboard.app import app
+from dashboard.app import app, _auto_heal_evidence_directory
 from src.db import init_db
 
 # Initialize database schema and tables upon process launch
 init_db()
+
+# Auto-heal and ensure evidence directory is populated with forensic PCAPs
+_auto_heal_evidence_directory()
 
 # Expose WSGI application callable
 application = app

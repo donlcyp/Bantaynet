@@ -184,7 +184,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for u in users %}
+        {% for u in users if not u.is_virtual and u.id > 0 %}
         <tr>
           <td style="color: var(--text-dim); font-weight: 600;">#{{ u.id }}</td>
           <td style="font-weight: 600; color: var(--text-main);">

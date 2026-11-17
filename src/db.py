@@ -900,13 +900,15 @@ def get_all_users(db_path: Path | str | None = None) -> list[dict[str, Any]]:
             db_rows = [_normalize_user_dict(dict(r)) for r in conn.execute("SELECT id, username, email, role, created_at, is_2fa_enabled, backup_codes, must_change_password FROM users ORDER BY id ASC").fetchall()]  # type: ignore[misc]
 
     existing_usernames = {r["username"] for r in db_rows if r}
-    # Append virtual test accounts only if not already registered in DB
+    # Append virtual test accounts strictly during automated pytest runs
     result = [r for r in db_rows if r]
-    for v in _get_static_test_accounts().values():
-        if v["username"] not in existing_usernames:
-            norm_v = _normalize_user_dict(v)
-            if norm_v:
-                result.append(norm_v)
+    import os
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("BANTAYNET_ENABLE_TEST_ACCOUNTS") == "1":
+        for v in _get_static_test_accounts().values():
+            if v["username"] not in existing_usernames:
+                norm_v = _normalize_user_dict(v)
+                if norm_v:
+                    result.append(norm_v)
 
     return result
 

@@ -82,3 +82,10 @@ def write_evidence(pcap_path: str | Path, alerts: list[Alert], out_dir: str | Pa
                     alert.details = {}
                 alert.details["evidence_sha256"] = sha
                 alert.evidence_sha256 = sha
+                try:
+                    file_size = path.stat().st_size
+                    if file_size <= 512 * 1024:
+                        import base64
+                        alert.details["evidence_b64"] = base64.b64encode(path.read_bytes()).decode("ascii")
+                except Exception:
+                    pass
