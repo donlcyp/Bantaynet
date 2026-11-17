@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.config import Config, load_config
+import src.config
+from src.config import Config
 from src.notifier import send_alert_email
 
 logger = logging.getLogger("bantaynet.integrations")
@@ -36,6 +37,13 @@ def _normalize_alert(alert: Any, client_name: str = "Default") -> dict[str, Any]
             d["description"] = d["summary"]
     else:
         d = {"rule": str(alert), "severity": "low", "src_ip": "Unknown"}
+
+    if hasattr(alert, "id"):
+        d["id"] = getattr(alert, "id")
+        d["alert_id"] = getattr(alert, "id")
+    elif isinstance(alert, dict) and "id" in alert:
+        d["id"] = alert["id"]
+        d["alert_id"] = alert["id"]
 
     d.setdefault("client_name", client_name)
     return d
@@ -107,7 +115,7 @@ def dispatch(
 
     if cfg is None:
         try:
-            cfg = load_config()
+            cfg = src.config.load_config()
         except Exception as exc:
             logger.warning("Failed to load config for integrations dispatch: %s", exc)
             return {"email": 0, "telegram": 0, "abuseipdb": 0, "syslog": 0}

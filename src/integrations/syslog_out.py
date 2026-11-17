@@ -13,7 +13,8 @@ import socket
 import time
 from typing import Any
 
-from src.config import Config, load_config
+import src.config
+from src.config import Config
 from src.mitre import get_mitre_info
 
 logger = logging.getLogger("bantaynet.integrations.syslog")
@@ -188,7 +189,7 @@ def send_syslog_alerts(
 
     if cfg is None:
         try:
-            cfg = load_config()
+            cfg = src.config.load_config()
         except Exception as exc:
             logger.warning("Syslog export skipped: could not load config: %s", exc)
             return 0

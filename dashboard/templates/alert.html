@@ -135,6 +135,36 @@
       <dt>Source Host</dt>
       <dd><span class="ip-text" style="color: #f87171;">{{ alert.src_ip }}</span></dd>
 
+      <dt>IP Reputation</dt>
+      <dd>
+        {% if alert.reputation_score is not none %}
+          {% if alert.reputation_score >= 75 %}
+            <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-size: 0.82rem; padding: 0.2rem 0.55rem;">
+              {{ alert.reputation_score }}% Confidence (Malicious)
+            </span>
+          {% elif alert.reputation_score >= 25 %}
+            <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.82rem; padding: 0.2rem 0.55rem;">
+              {{ alert.reputation_score }}% Confidence (Suspicious)
+            </span>
+          {% else %}
+            <span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); font-size: 0.82rem; padding: 0.2rem 0.55rem;">
+              {{ alert.reputation_score }}% Confidence (Clean)
+            </span>
+          {% endif %}
+          {% if alert.reputation_note %}
+            <span style="font-size: 0.82rem; color: var(--text-muted); margin-left: 0.5rem;">
+              {{ alert.reputation_note|e }}
+            </span>
+          {% endif %}
+        {% elif alert.reputation_note %}
+          <span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); font-size: 0.82rem; padding: 0.2rem 0.55rem;">
+            {{ alert.reputation_note|e }}
+          </span>
+        {% else %}
+          <span style="color: var(--text-dim); font-size: 0.85rem;">Not checked / unrated</span>
+        {% endif %}
+      </dd>
+
       <dt>Destination Host</dt>
       <dd><span class="ip-text" style="color: #38bdf8;">{{ alert.dst_ip or 'N/A' }}</span></dd>
 

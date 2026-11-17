@@ -97,6 +97,11 @@ integrations:
     protocol: "udp"          # "udp" or "tcp"
     format: "cef"            # "cef" or "json"
     min_severity: "low"      # "low", "medium", or "high"
+  abuseipdb:
+    enabled: false
+    max_age_days: 90
+    cache_hours: 24
+
 
 
 

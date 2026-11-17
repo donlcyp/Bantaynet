@@ -238,10 +238,20 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                         status VARCHAR(32) DEFAULT 'new',
                         analyst_note TEXT,
                         updated_at VARCHAR(64),
-                        client_name VARCHAR(128) DEFAULT 'Default'
+                        client_name VARCHAR(128) DEFAULT 'Default',
+                        reputation_score INT,
+                        reputation_note TEXT
                     );
                     """
                 )
+                try:
+                    cur.execute("ALTER TABLE alerts ADD COLUMN reputation_score INT;")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE alerts ADD COLUMN reputation_note TEXT;")
+                except Exception:
+                    pass
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_rule ON alerts(rule);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_src ON alerts(src_ip);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);")
@@ -336,6 +346,8 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                     "analyst_note TEXT",
                     "updated_at VARCHAR(64)",
                     "client_name VARCHAR(128) DEFAULT 'Default'",
+                    "reputation_score INT",
+                    "reputation_note TEXT",
                 ]:
                     try:
                         cur.execute(f"ALTER TABLE alerts ADD COLUMN {col_def};")
@@ -413,7 +425,9 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                 status TEXT DEFAULT 'new',
                 analyst_note TEXT,
                 updated_at TEXT,
-                client_name TEXT DEFAULT 'Default'
+                client_name TEXT DEFAULT 'Default',
+                reputation_score INTEGER,
+                reputation_note TEXT
             );
             """
         )
@@ -424,6 +438,8 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
             ("analyst_note", "TEXT"),
             ("updated_at", "TEXT"),
             ("client_name", "TEXT DEFAULT 'Default'"),
+            ("reputation_score", "INTEGER"),
+            ("reputation_note", "TEXT"),
         ]
         for col_name, col_type in migration_cols:
             if col_name not in existing_cols:
@@ -1193,6 +1209,8 @@ def insert_alert(
     client_name: str = "Default",
     status: str = "new",
     analyst_note: str = "",
+    reputation_score: int | None = None,
+    reputation_note: str | None = None,
 ) -> int:
     """Insert a new alert record into active database (MySQL or SQLite)."""
     invalidate_aggregate_cache()
@@ -1216,8 +1234,8 @@ def insert_alert(
                     INSERT INTO alerts (
                         detected_at, packet_time, rule, severity, src_ip, dst_ip, dst_port,
                         protocol, description, evidence_file, source_pcap, packet_count, details_json,
-                        client_name, status, analyst_note, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        client_name, status, analyst_note, updated_at, reputation_score, reputation_note
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         detected_at,
@@ -1237,6 +1255,8 @@ def insert_alert(
                         status or "new",
                         analyst_note or "",
                         detected_at,
+                        reputation_score,
+                        reputation_note,
                     ),
                 )
                 last_id = cur.lastrowid
@@ -1252,8 +1272,8 @@ def insert_alert(
             INSERT INTO alerts (
                 detected_at, packet_time, rule, severity, src_ip, dst_ip, dst_port,
                 protocol, description, evidence_file, source_pcap, packet_count, details_json,
-                client_name, status, analyst_note, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                client_name, status, analyst_note, updated_at, reputation_score, reputation_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 detected_at,
@@ -1273,10 +1293,45 @@ def insert_alert(
                 status or "new",
                 analyst_note or "",
                 detected_at,
+                reputation_score,
+                reputation_note,
             ),
         )
         conn.commit()
         return int(cursor.lastrowid)
+
+
+def update_alert_reputation(
+    alert_id: int,
+    reputation_score: int | None,
+    reputation_note: str | None,
+    db_path: Path | str | None = None,
+) -> bool:
+    """Update an alert's IP reputation score and note."""
+    invalidate_aggregate_cache()
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE alerts SET reputation_score = %s, reputation_note = %s WHERE id = %s",
+                    (reputation_score, reputation_note, alert_id),
+                )
+            conn.close()
+            return True
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        conn.execute(
+            "UPDATE alerts SET reputation_score = ?, reputation_note = ? WHERE id = ?",
+            (reputation_score, reputation_note, alert_id),
+        )
+        conn.commit()
+    return True
 
 
 def update_alert_status_and_note(
@@ -1332,6 +1387,8 @@ def _format_alert_dict(row: Any) -> dict[str, Any]:
     d["analyst_note"] = d.get("analyst_note") or ""
     d["evidence_sha256"] = d.get("evidence_sha256") or d["details"].get("evidence_sha256")
     d["source_pcap_sha256"] = d.get("source_pcap_sha256") or d["details"].get("source_pcap_sha256")
+    d["reputation_score"] = d.get("reputation_score")
+    d["reputation_note"] = d.get("reputation_note") or ""
     attach_mitre_info(d)
     return d
 

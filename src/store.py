@@ -34,6 +34,7 @@ def store_alerts(
             dst_port=a.dst_port,
             client_name=client_name or "Default",
         )
+        setattr(a, "id", aid)
         inserted_ids.append(aid)
 
     if notify and alerts:
