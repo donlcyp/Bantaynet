@@ -314,8 +314,14 @@ def clear_login_failures(ip: str, username: str):
     _login_failures.pop(f"{ip}:{username.lower()}", None)
 
 
-def _resolve_evidence(stored: str | None) -> Path | None:
-    """Turn a stored (project-relative or legacy absolute) evidence path into a real path."""
+def _resolve_evidence(stored: str | None, expected_sha: str | None = None) -> Path | None:
+    """Turn a stored (project-relative or legacy absolute) evidence path into a real path.
+
+    Includes fallback mechanisms for forensic resiliency:
+    1. Direct resolution within PROJECT_ROOT.
+    2. Stripping random upload UUID prefixes (e.g. 19ad6b4f_sample.pcap -> sample.pcap).
+    3. Matching by SHA-256 in the evidence directory if file was renamed.
+    """
     if not stored:
         return None
     p = Path(stored)
@@ -325,9 +331,40 @@ def _resolve_evidence(stored: str | None) -> Path | None:
         # Path traversal guard: ensure target is within PROJECT_ROOT
         if not resolved.is_relative_to(PROJECT_ROOT.resolve()):
             return None
-        return resolved
+        if resolved.is_file():
+            return resolved
     except Exception:
-        return None
+        pass
+
+    # Fallback 1: Check without leading hex upload UUID prefix (e.g. 19ad6b4f_)
+    try:
+        stem = p.name
+        cleaned_name = re.sub(r"^[0-9a-fA-F]{8}_", "", stem)
+        if cleaned_name != stem:
+            candidate = (PROJECT_ROOT / "evidence" / cleaned_name).resolve()
+            if candidate.is_relative_to(PROJECT_ROOT.resolve()) and candidate.is_file():
+                return candidate
+            prefix = cleaned_name.split("_")[0] if "_" in cleaned_name else cleaned_name
+            for match in (PROJECT_ROOT / "evidence").glob(f"*{prefix}*"):
+                if match.is_file() and match.suffix.lower() in [".pcap", ".pcapng"]:
+                    return match.resolve()
+    except Exception:
+        pass
+
+    # Fallback 2: Check by expected forensic SHA-256 hash
+    if expected_sha:
+        try:
+            ev_dir = (PROJECT_ROOT / "evidence").resolve()
+            if ev_dir.is_dir():
+                for candidate in ev_dir.glob("*.pcap*"):
+                    if candidate.is_file():
+                        from src.evidence import calculate_sha256
+                        if calculate_sha256(candidate).lower() == expected_sha.lower():
+                            return candidate
+        except Exception:
+            pass
+
+    return None
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -802,14 +839,14 @@ def alert_detail(alert_id: int):
         abort(404, description=f"Alert #{alert_id} not found")
 
     evidence_packets = []
-    evidence_path = _resolve_evidence(alert.get("evidence_file"))
+    stored_sha = alert.get("evidence_sha256") or alert.get("details", {}).get("evidence_sha256")
+    evidence_path = _resolve_evidence(alert.get("evidence_file"), expected_sha=stored_sha)
     evidence_hash = None
     evidence_status = "none"
 
     if evidence_path and evidence_path.is_file():
         live_sha = calculate_sha256(evidence_path)
         evidence_hash = live_sha
-        stored_sha = alert.get("evidence_sha256") or alert.get("details", {}).get("evidence_sha256")
         if stored_sha:
             if stored_sha.lower() == live_sha.lower():
                 evidence_status = "verified"
@@ -962,7 +999,8 @@ def download_evidence(alert_id: int):
     if not alert or not alert.get("evidence_file"):
         abort(404, description="No evidence file associated with this alert")
 
-    file_path = _resolve_evidence(alert["evidence_file"])
+    stored_sha = alert.get("evidence_sha256") or alert.get("details", {}).get("evidence_sha256")
+    file_path = _resolve_evidence(alert["evidence_file"], expected_sha=stored_sha)
     if file_path is None or not file_path.is_file():
         abort(404, description="Evidence file does not exist on disk")
 

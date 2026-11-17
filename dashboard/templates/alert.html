@@ -368,8 +368,26 @@
     </table>
   </div>
   {% else %}
-  <div style="padding: 2rem; text-align: center; color: var(--text-dim);">
-    No evidence packets to display for this alert.
+  <div style="padding: 2.5rem 1.5rem; text-align: center;">
+    {% if alert.evidence_file %}
+    <div style="max-width: 540px; margin: 0 auto; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.5rem;">
+      <div style="color: var(--badge-investigating-text); font-weight: 600; font-size: 0.95rem; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span>Evidence PCAP File Not Found Locally</span>
+      </div>
+      <div style="font-size: 0.84rem; color: var(--text-muted); line-height: 1.5;">
+        The recorded evidence capture file (<code>{{ alert.evidence_file }}</code>) is not present on this server's local storage. The alert metadata is safely preserved in Supabase, but the binary capture was likely cleared during maintenance or uploaded from a different workstation.
+      </div>
+    </div>
+    {% else %}
+    <div style="color: var(--text-dim); font-size: 0.85rem;">
+      No evidence PCAP was recorded for this alert (evidence capture was disabled or no packets triggered this rule).
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 </div>
