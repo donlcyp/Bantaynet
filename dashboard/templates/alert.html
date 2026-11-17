@@ -62,54 +62,107 @@
 </div>
 
 <!-- Security Analyst Triage & Status Panel -->
-<div class="panel" style="margin-bottom: 1.5rem; border: 1px solid rgba(56, 189, 248, 0.25); background: rgba(15, 23, 42, 0.85);">
-  <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.6rem;">
-    <div style="display: flex; align-items: center; gap: 0.5rem;">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
-        <path d="M9 11l3 3L22 4"></path>
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-      </svg>
-      <span style="font-weight: 600; color: #38bdf8;">Analyst Incident Triage</span>
+<div class="panel triage-panel">
+  <div class="triage-header">
+    <div class="triage-title-group">
+      <div class="triage-icon-wrap">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 11l3 3L22 4"></path>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+        </svg>
+      </div>
+      <div>
+        <div style="display: flex; align-items: center;">
+          <span class="triage-title">Analyst Incident Triage</span>
+          <span class="triage-badge">SOC Action Desk</span>
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem;">
+          Review alert evidence, update containment status, and record root-cause investigation notes.
+        </div>
+      </div>
     </div>
-    <span style="font-size: 0.8rem; color: var(--text-dim);">
-      {% if alert.updated_at %}Last triaged: {{ alert.updated_at }}{% else %}Unreviewed{% endif %}
-    </span>
+    <div class="triage-timestamp">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <span>Last Triaged:</span>
+      <strong>
+        {% if alert.updated_at %}
+          {{ (alert.updated_at|string)[:19]|replace('T', ' ') }} UTC
+        {% else %}
+          <em>Unreviewed (Initial Detection)</em>
+        {% endif %}
+      </strong>
+    </div>
   </div>
 
   {% if current_user and current_user.role == 'analyst' %}
-  <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" style="margin-top: 1rem;">
+  <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" class="triage-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="triage-form-grid" style="display: grid; grid-template-columns: 220px 1fr auto; gap: 1rem; align-items: start;">
-      <div>
-        <label for="statusSelect" style="display:block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">Change Status</label>
-        <select name="status" id="statusSelect" class="form-control" style="width: 100%;">
-          <option value="new" {% if alert.status == 'new' %}selected{% endif %}>New</option>
-          <option value="investigating" {% if alert.status == 'investigating' %}selected{% endif %}>Investigating</option>
-          <option value="resolved" {% if alert.status == 'resolved' %}selected{% endif %}>Resolved</option>
-          <option value="false_positive" {% if alert.status == 'false_positive' %}selected{% endif %}>False Positive</option>
+    <div class="triage-grid">
+      <!-- Status column -->
+      <div class="triage-col-status">
+        <label for="statusSelect" class="triage-label">Incident Status</label>
+        <select name="status" id="statusSelect" class="triage-select">
+          <option value="new" {% if alert.status == 'new' %}selected{% endif %}>🔵 New Incident</option>
+          <option value="investigating" {% if alert.status == 'investigating' %}selected{% endif %}>🟡 Under Investigation</option>
+          <option value="resolved" {% if alert.status == 'resolved' %}selected{% endif %}>🟢 Resolved (Threat Mitigated)</option>
+          <option value="false_positive" {% if alert.status == 'false_positive' %}selected{% endif %}>⚪ False Positive (Dismissed)</option>
         </select>
+        <div class="triage-status-hint">
+          <span>Active State:</span>
+          <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
+        </div>
       </div>
-      <div>
-        <label for="analystNote" style="display:block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main);">Analyst Notes & Findings</label>
-        <textarea name="analyst_note" id="analystNote" class="form-control" rows="2" placeholder="Document root-cause, investigation notes, false-positive justification, or client communication..." style="width: 100%; resize: vertical; font-family: inherit;">{{ alert.analyst_note or '' }}</textarea>
+
+      <!-- Notes column -->
+      <div class="triage-col-notes">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.45rem;">
+          <label for="analystNote" class="triage-label" style="margin-bottom: 0;">Analyst Notes &amp; Root-Cause Findings</label>
+          <span style="font-size: 0.72rem; color: var(--text-dim);">Root cause, IOCs, containment steps, or client comms</span>
+        </div>
+        <textarea name="analyst_note" id="analystNote" class="triage-textarea" rows="3" placeholder="Document root-cause, investigation notes, false-positive justification, or client communication...">{{ alert.analyst_note or '' }}</textarea>
       </div>
-      <div style="margin-top: 1.6rem;">
-        <button type="submit" class="btn btn-primary" style="height: 38px;">Save Notes</button>
+    </div>
+
+    <div class="triage-footer">
+      <div class="triage-footer-info">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>Changes are logged with your user identity in the tamper-evident audit log.</span>
       </div>
+      <button type="submit" class="btn btn-primary triage-submit-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+          <polyline points="17 21 17 13 7 13 7 21"></polyline>
+          <polyline points="7 3 7 8 15 8"></polyline>
+        </svg>
+        <span>Save Triage Notes</span>
+      </button>
     </div>
   </form>
   {% else %}
-  <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
-    <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <span style="font-size: 0.85rem; color: var(--text-muted);">Current Status:</span>
-      <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
+  <div class="triage-readonly">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">Current Status:</span>
+        <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
+      </div>
+      <span style="font-size: 0.78rem; color: var(--text-dim); display: inline-flex; align-items: center; gap: 0.35rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+        Read-only view (Security Analyst role required to edit)
+      </span>
     </div>
-    <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem 1rem;">
-      <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.25rem;">Analyst Notes</div>
-      <div style="font-size: 0.88rem; color: var(--text-main); white-space: pre-wrap;">{{ alert.analyst_note or 'No notes recorded.' }}</div>
-    </div>
-    <div style="font-size: 0.78rem; color: #a78bfa;">
-      <em>Read-only view: Security Analyst credentials required to modify incident status and triage notes.</em>
+    <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem;">
+      <div style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.35rem; font-weight: 600; letter-spacing: 0.5px;">Analyst Notes</div>
+      <div style="font-size: 0.88rem; color: var(--text-main); white-space: pre-wrap; line-height: 1.5;">{{ alert.analyst_note or 'No notes recorded.' }}</div>
     </div>
   </div>
   {% endif %}
