@@ -518,35 +518,42 @@
 
           let title = "Processing Security Telemetry...";
           let subtitle = "Executing transaction across detection modules...";
+          let category = "general";
 
           const action = (form.getAttribute('action') || '').toLowerCase();
           const formId = (form.id || '').toLowerCase();
 
           if (formId === 'uploadform' || action.includes('/upload')) {
+            category = "pcap";
             const fileInput = form.querySelector('input[type="file"]');
             const fileName = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0].name : 'Capture File';
             title = `Analyzing Network Capture: ${fileName}`;
-            subtitle = "Streaming packet parser & running 7 detection engines...";
+            subtitle = "Streaming packet parser & running detection engines...";
             closeUploadModal();
           } else if (action.includes('password')) {
+            category = "auth";
             title = "Securing Operator Credentials";
-            subtitle = "Encrypting passphrase with PBKDF2 hash & validating NIST policy...";
+            subtitle = "Validating NIST passphrase policy & computing scrypt hash...";
           } else if (action.includes('login')) {
+            category = "auth";
             title = "Authenticating Operator";
             subtitle = "Verifying security credentials & establishing encrypted session...";
           } else if (action.includes('status')) {
+            category = "triage";
             title = "Updating Incident Triage";
             subtitle = "Recording analyst investigation notes & syncing status...";
           } else if (action.includes('rules')) {
+            category = "general";
             title = "Applying Rule Thresholds";
             subtitle = "Persisting detection window parameters to rules.yaml...";
           } else if (action.includes('storage') || action.includes('delete') || action.includes('clear')) {
+            category = "triage";
             title = "Modifying Evidence Storage";
             subtitle = "Updating disk records and database integrity checks...";
           }
 
           if (window.BantayLoading) {
-            window.BantayLoading.show({ title: title, subtitle: subtitle });
+            window.BantayLoading.show({ title: title, subtitle: subtitle, category: category });
           }
         });
       });
@@ -557,13 +564,13 @@
           const href = link.getAttribute('href') || '';
           let title = "Generating Forensic Report...";
           let subtitle = "Compiling audit dossier & computing cryptographic checksums...";
+          let category = "export";
           if (href.includes('evidence')) {
             title = "Preparing Evidence PCAP...";
             subtitle = "Reading carved packet snippet for forensic download...";
           }
           if (window.BantayLoading) {
-            window.BantayLoading.show({ title: title, subtitle: subtitle });
-            // For file downloads that don't reload the page, auto-dismiss after 4 seconds
+            window.BantayLoading.show({ title: title, subtitle: subtitle, category: category });
             setTimeout(function() {
               window.BantayLoading.hide();
             }, 4000);
@@ -576,12 +583,68 @@
     window.BantayLoading = (function() {
       let timerInterval = null;
       let startTime = 0;
+      let activeCategory = 'general';
+      let initialSubtitle = '';
+
+      const CATEGORY_PHASES = {
+        pcap: ["Ingestion", "Correlating", "Forensics", "Persistence"],
+        auth: ["Validation", "Entropy", "Encryption", "Session"],
+        triage: ["Review", "Audit Trail", "Database", "Confirmed"],
+        export: ["Gathering", "Compiling", "Checksum", "Download"],
+        general: ["Dispatch", "Executing", "Verifying", "Finalizing"]
+      };
+
+      const CATEGORY_SUBTITLES = {
+        pcap: [
+          { max: 1.8, text: "Ingesting packet capture & validating stream headers..." },
+          { max: 4.5, text: "Correlating sliding time-windows across MITRE ATT&CK detection rules..." },
+          { max: 7.5, text: "Carving forensic evidence packets & computing SHA-256 integrity checksums..." },
+          { max: 12.0, text: "Querying threat intelligence & persisting incident records to database..." },
+          { max: 9999, text: "Processing large capture stream. Finalizing security telemetry..." }
+        ],
+        auth: [
+          { max: 1.8, text: "Validating passphrase against NIST SP 800-63B complexity standards..." },
+          { max: 4.5, text: "Computing salted scrypt cryptographic password hash..." },
+          { max: 7.5, text: "Recording security policy change in immutable audit log..." },
+          { max: 12.0, text: "Syncing credentials with database and establishing secure session..." },
+          { max: 9999, text: "Finalizing operator authentication. Redirecting..." }
+        ],
+        triage: [
+          { max: 1.8, text: "Validating analyst incident triage findings..." },
+          { max: 4.5, text: "Recording operator action to tamper-evident audit ledger..." },
+          { max: 7.5, text: "Syncing incident status and notes with database..." },
+          { max: 12.0, text: "Refreshing SOC workspace and alert indices..." },
+          { max: 9999, text: "Finalizing case update..." }
+        ],
+        export: [
+          { max: 1.8, text: "Aggregating incident telemetry and forensic packet data..." },
+          { max: 4.5, text: "Compiling executive dossier and chart visualizations..." },
+          { max: 7.5, text: "Computing SHA-256 cryptographic verification digest..." },
+          { max: 12.0, text: "Streaming forensic package to browser download channel..." },
+          { max: 9999, text: "Transferring file stream to browser..." }
+        ],
+        general: [
+          { max: 1.8, text: "Dispatching transaction request across detection modules..." },
+          { max: 4.5, text: "Executing backend operational parameters..." },
+          { max: 7.5, text: "Verifying response integrity and state consistency..." },
+          { max: 12.0, text: "Persisting changes to database and refreshing UI..." },
+          { max: 9999, text: "Finalizing transaction..." }
+        ]
+      };
 
       const overlay = function() { return document.getElementById('bantayGlobalLoadingOverlay'); };
       const titleEl = function() { return document.getElementById('bantayLoadingTitle'); };
       const subtitleEl = function() { return document.getElementById('bantayLoadingSubtitle'); };
       const timerEl = function() { return document.getElementById('bantayLoadingTimer'); };
       const cancelBtn = function() { return document.getElementById('bantayLoadingCancelBtn'); };
+
+      function setPhaseLabels(cat) {
+        const phases = CATEGORY_PHASES[cat] || CATEGORY_PHASES.general;
+        for (let i = 1; i <= 4; i++) {
+          const t = document.getElementById('phase' + i + 'Text');
+          if (t && phases[i - 1]) t.textContent = phases[i - 1];
+        }
+      }
 
       function updatePhases(elapsedSec) {
         const p1 = document.getElementById('phase1');
@@ -613,18 +676,14 @@
         }
       }
 
-      function getDynamicSubtitle(baseSubtitle, elapsedSec) {
-        if (elapsedSec < 1.8) {
-          return baseSubtitle || "Ingesting packet capture & validating stream headers...";
-        } else if (elapsedSec < 4.5) {
-          return "Correlating sliding time-windows across MITRE ATT&CK detection rules...";
-        } else if (elapsedSec < 7.5) {
-          return "Carving forensic evidence packets & computing SHA-256 integrity checksums...";
-        } else if (elapsedSec < 12.0) {
-          return "Querying threat intelligence & persisting incident records to database...";
-        } else {
-          return "Processing large dataset stream. Finalizing security telemetry...";
+      function getDynamicSubtitle(elapsedSec) {
+        const list = CATEGORY_SUBTITLES[activeCategory] || CATEGORY_SUBTITLES.general;
+        for (let i = 0; i < list.length; i++) {
+          if (elapsedSec < list[i].max) {
+            return list[i].text;
+          }
         }
+        return list[list.length - 1].text;
       }
 
       function formatTime(ms) {
@@ -636,19 +695,19 @@
         return `${mm}:${ss}s`;
       }
 
-      function tick(baseSubtitle) {
+      function tick() {
         const elapsedMs = performance.now() - startTime;
         const elapsedSec = elapsedMs / 1000;
         const t = timerEl();
         if (t) t.textContent = formatTime(elapsedMs);
 
         const s = subtitleEl();
-        if (s) s.textContent = getDynamicSubtitle(baseSubtitle, elapsedSec);
+        if (s) s.textContent = getDynamicSubtitle(elapsedSec);
 
         updatePhases(elapsedSec);
 
         const btn = cancelBtn();
-        if (btn && elapsedSec > 15) {
+        if (btn && elapsedSec > 12) {
           btn.style.display = 'inline-block';
         }
       }
@@ -658,16 +717,36 @@
         const ov = overlay();
         if (!ov) return;
 
+        let cat = options.category;
+        if (!cat) {
+          const tLower = (options.title || '').toLowerCase();
+          const sLower = (options.subtitle || '').toLowerCase();
+          if (tLower.includes('capture') || tLower.includes('pcap') || sLower.includes('packet')) {
+            cat = 'pcap';
+          } else if (tLower.includes('password') || tLower.includes('authenticat') || tLower.includes('credential') || tLower.includes('login')) {
+            cat = 'auth';
+          } else if (tLower.includes('triage') || tLower.includes('status') || tLower.includes('incident')) {
+            cat = 'triage';
+          } else if (tLower.includes('report') || tLower.includes('export') || tLower.includes('evidence')) {
+            cat = 'export';
+          } else {
+            cat = 'general';
+          }
+        }
+        activeCategory = cat;
+
         const title = options.title || "Processing Security Telemetry...";
-        const subtitle = options.subtitle || "Executing transaction across detection modules...";
+        initialSubtitle = options.subtitle || getDynamicSubtitle(0);
 
         const tEl = titleEl();
         const sEl = subtitleEl();
         const btn = cancelBtn();
 
         if (tEl) tEl.textContent = title;
-        if (sEl) sEl.textContent = subtitle;
+        if (sEl) sEl.textContent = initialSubtitle;
         if (btn) btn.style.display = 'none';
+
+        setPhaseLabels(activeCategory);
 
         startTime = performance.now();
         updatePhases(0);
@@ -680,7 +759,7 @@
 
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(function() {
-          tick(subtitle);
+          tick();
         }, 50);
       }
 
@@ -696,7 +775,6 @@
         }
       }
 
-      // Hide loading screen if user navigates back in browser history
       window.addEventListener('pageshow', function() {
         hide();
       });
@@ -713,10 +791,11 @@
     <div class="bantay-loading-modal">
       <div class="radar-scanner-wrapper">
         <div class="radar-conic-ring"></div>
+        <div class="radar-outer-pulse"></div>
         <div class="radar-center-shield">
           <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M50 8 L85 24 V52 C85 74 50 92 50 92 C50 92 15 74 15 52 V24 Z" fill="#091322" stroke="#38bdf8" stroke-width="4" stroke-linejoin="round" />
-            <path d="M30 50 Q50 34 70 50 Q50 66 30 50 Z" fill="#042f2e" stroke="#38bdf8" stroke-width="2.5" />
+            <path d="M50 8 L85 24 V52 C85 74 50 92 50 92 C50 92 15 74 15 52 V24 Z" fill="rgba(6, 182, 212, 0.12)" stroke="#38bdf8" stroke-width="4.5" stroke-linejoin="round" />
+            <path d="M30 50 Q50 34 70 50 Q50 66 30 50 Z" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="3" />
             <circle cx="50" cy="50" r="7" fill="#38bdf8" />
             <circle cx="50" cy="50" r="3" fill="#020617" />
           </svg>
@@ -727,6 +806,7 @@
       <p id="bantayLoadingSubtitle" class="loading-subtitle">Executing transaction across detection modules...</p>
 
       <div class="loading-duration-cluster">
+        <span class="loading-live-dot"></span>
         <span class="loading-duration-label">Elapsed:</span>
         <span id="bantayLoadingTimer" class="loading-timer">00:00.0s</span>
       </div>
@@ -737,16 +817,16 @@
 
       <div class="loading-phases">
         <div id="phase1" class="phase-step active">
-          <span class="phase-dot"></span> Ingestion
+          <span class="phase-dot"></span> <span id="phase1Text">Ingestion</span>
         </div>
         <div id="phase2" class="phase-step">
-          <span class="phase-dot"></span> Correlating
+          <span class="phase-dot"></span> <span id="phase2Text">Correlating</span>
         </div>
         <div id="phase3" class="phase-step">
-          <span class="phase-dot"></span> Forensics
+          <span class="phase-dot"></span> <span id="phase3Text">Forensics</span>
         </div>
         <div id="phase4" class="phase-step">
-          <span class="phase-dot"></span> Persistence
+          <span class="phase-dot"></span> <span id="phase4Text">Persistence</span>
         </div>
       </div>
 
