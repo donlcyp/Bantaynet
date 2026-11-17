@@ -504,8 +504,11 @@ VALID_ROLES = ("admin", "analyst", "viewer")
 
 
 def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
-    """In-memory test accounts available for testing without touching the database."""
+    """In-memory test accounts available strictly during automated test runs."""
     import os
+    if not (os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("BANTAYNET_ENABLE_TEST_ACCOUNTS") == "1"):
+        return {}
+
     admin_pwd = os.environ.get("BANTAYNET_ADMIN_PASSWORD") or "admin123!"
     analyst_pwd = os.environ.get("BANTAYNET_ANALYST_PASSWORD") or "analyst123!"
     viewer_pwd = os.environ.get("BANTAYNET_VIEWER_PASSWORD") or "viewer123!"
