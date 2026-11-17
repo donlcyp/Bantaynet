@@ -25,7 +25,61 @@
   --severity-low-text: #93c5fd;
 
   --accent-cyan: #06b6d4;
+  --accent-blue: #38bdf8;
   --accent-emerald: #10b981;
+
+  /* Badges - Dark Theme */
+  --badge-new-bg: rgba(56, 189, 248, 0.15);
+  --badge-new-border: #38bdf8;
+  --badge-new-text: #7dd3fc;
+
+  --badge-investigating-bg: rgba(251, 191, 36, 0.15);
+  --badge-investigating-border: #fbbf24;
+  --badge-investigating-text: #fde68a;
+
+  --badge-resolved-bg: rgba(16, 185, 129, 0.15);
+  --badge-resolved-border: #10b981;
+  --badge-resolved-text: #6ee7b7;
+
+  --badge-false-bg: rgba(156, 163, 175, 0.15);
+  --badge-false-border: #9ca3af;
+  --badge-false-text: #d1d5db;
+
+  --badge-client-bg: rgba(6, 182, 212, 0.15);
+  --badge-client-border: #06b6d4;
+  --badge-client-text: #7dd3fc;
+
+  --badge-role-admin-bg: rgba(56, 189, 248, 0.15);
+  --badge-role-admin-border: #38bdf8;
+  --badge-role-admin-text: #7dd3fc;
+
+  --badge-role-analyst-bg: rgba(16, 185, 129, 0.15);
+  --badge-role-analyst-border: #10b981;
+  --badge-role-analyst-text: #6ee7b7;
+
+  --badge-role-viewer-bg: rgba(167, 139, 250, 0.15);
+  --badge-role-viewer-border: #a78bfa;
+  --badge-role-viewer-text: #c4b5fd;
+
+  --badge-mitre-bg: rgba(168, 85, 247, 0.15);
+  --badge-mitre-border: #a855f7;
+  --badge-mitre-text: #d8b4fe;
+
+  --badge-rep-clean-bg: rgba(16, 185, 129, 0.15);
+  --badge-rep-clean-border: #10b981;
+  --badge-rep-clean-text: #6ee7b7;
+
+  --badge-rep-suspicious-bg: rgba(245, 158, 11, 0.15);
+  --badge-rep-suspicious-border: #f59e0b;
+  --badge-rep-suspicious-text: #fbbf24;
+
+  --badge-rep-malicious-bg: rgba(239, 68, 68, 0.15);
+  --badge-rep-malicious-border: #ef4444;
+  --badge-rep-malicious-text: #f87171;
+
+  --badge-rep-unknown-bg: rgba(148, 163, 184, 0.15);
+  --badge-rep-unknown-border: #64748b;
+  --badge-rep-unknown-text: #94a3b8;
 }
 
 [data-theme="light"] {
@@ -39,8 +93,8 @@
   --border-color: #cbd5e1;
   --border-glow: rgba(59, 130, 246, 0.2);
   --text-main: #0f172a;
-  --text-muted: #475569;
-  --text-dim: #64748b;
+  --text-muted: #334155;
+  --text-dim: #475569;
 
   --severity-high-bg: #fee2e2;
   --severity-high-border: #f87171;
@@ -55,7 +109,61 @@
   --severity-low-text: #0369a1;
 
   --accent-cyan: #0284c7;
+  --accent-blue: #0369a1;
   --accent-emerald: #059669;
+
+  /* Badges - Light Theme (High Contrast WCAG AAA/AA) */
+  --badge-new-bg: #e0f2fe;
+  --badge-new-border: #0284c7;
+  --badge-new-text: #0369a1;
+
+  --badge-investigating-bg: #fef3c7;
+  --badge-investigating-border: #d97706;
+  --badge-investigating-text: #92400e;
+
+  --badge-resolved-bg: #dcfce7;
+  --badge-resolved-border: #16a34a;
+  --badge-resolved-text: #166534;
+
+  --badge-false-bg: #f1f5f9;
+  --badge-false-border: #94a3b8;
+  --badge-false-text: #334155;
+
+  --badge-client-bg: #e0f2fe;
+  --badge-client-border: #0284c7;
+  --badge-client-text: #0369a1;
+
+  --badge-role-admin-bg: #e0f2fe;
+  --badge-role-admin-border: #0284c7;
+  --badge-role-admin-text: #0369a1;
+
+  --badge-role-analyst-bg: #dcfce7;
+  --badge-role-analyst-border: #16a34a;
+  --badge-role-analyst-text: #166534;
+
+  --badge-role-viewer-bg: #f3e8ff;
+  --badge-role-viewer-border: #9333ea;
+  --badge-role-viewer-text: #6b21a8;
+
+  --badge-mitre-bg: #f3e8ff;
+  --badge-mitre-border: #9333ea;
+  --badge-mitre-text: #6b21a8;
+
+  --badge-rep-clean-bg: #dcfce7;
+  --badge-rep-clean-border: #16a34a;
+  --badge-rep-clean-text: #166534;
+
+  --badge-rep-suspicious-bg: #fef3c7;
+  --badge-rep-suspicious-border: #d97706;
+  --badge-rep-suspicious-text: #92400e;
+
+  --badge-rep-malicious-bg: #fee2e2;
+  --badge-rep-malicious-border: #dc2626;
+  --badge-rep-malicious-text: #991b1b;
+
+  --badge-rep-unknown-bg: #f1f5f9;
+  --badge-rep-unknown-border: #94a3b8;
+  --badge-rep-unknown-text: #334155;
 }
 
 * {
@@ -458,27 +566,94 @@ select.form-control option {
 }
 
 .badge-status-new {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: #38bdf8;
-  color: #7dd3fc;
+  background: var(--badge-new-bg);
+  border-color: var(--badge-new-border);
+  color: var(--badge-new-text);
+  font-weight: 600;
 }
 
 .badge-status-investigating {
-  background: rgba(251, 191, 36, 0.15);
-  border-color: #fbbf24;
-  color: #fde68a;
+  background: var(--badge-investigating-bg);
+  border-color: var(--badge-investigating-border);
+  color: var(--badge-investigating-text);
+  font-weight: 600;
 }
 
 .badge-status-resolved {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: #10b981;
-  color: #6ee7b7;
+  background: var(--badge-resolved-bg);
+  border-color: var(--badge-resolved-border);
+  color: var(--badge-resolved-text);
+  font-weight: 600;
 }
 
 .badge-status-false_positive {
-  background: rgba(156, 163, 175, 0.15);
-  border-color: #9ca3af;
-  color: #d1d5db;
+  background: var(--badge-false-bg);
+  border-color: var(--badge-false-border);
+  color: var(--badge-false-text);
+  font-weight: 600;
+}
+
+.badge-client {
+  background: var(--badge-client-bg);
+  border-color: var(--badge-client-border);
+  color: var(--badge-client-text);
+  font-weight: 600;
+}
+
+.badge-role-admin {
+  background: var(--badge-role-admin-bg);
+  border-color: var(--badge-role-admin-border);
+  color: var(--badge-role-admin-text);
+  font-weight: 600;
+}
+
+.badge-role-analyst {
+  background: var(--badge-role-analyst-bg);
+  border-color: var(--badge-role-analyst-border);
+  color: var(--badge-role-analyst-text);
+  font-weight: 600;
+}
+
+.badge-role-viewer {
+  background: var(--badge-role-viewer-bg);
+  border-color: var(--badge-role-viewer-border);
+  color: var(--badge-role-viewer-text);
+  font-weight: 600;
+}
+
+.badge-mitre {
+  background: var(--badge-mitre-bg);
+  border-color: var(--badge-mitre-border);
+  color: var(--badge-mitre-text);
+  font-weight: 600;
+}
+
+.badge-rep-clean {
+  background: var(--badge-rep-clean-bg);
+  border-color: var(--badge-rep-clean-border);
+  color: var(--badge-rep-clean-text);
+  font-weight: 600;
+}
+
+.badge-rep-suspicious {
+  background: var(--badge-rep-suspicious-bg);
+  border-color: var(--badge-rep-suspicious-border);
+  color: var(--badge-rep-suspicious-text);
+  font-weight: 600;
+}
+
+.badge-rep-malicious {
+  background: var(--badge-rep-malicious-bg);
+  border-color: var(--badge-rep-malicious-border);
+  color: var(--badge-rep-malicious-text);
+  font-weight: 600;
+}
+
+.badge-rep-unknown {
+  background: var(--badge-rep-unknown-bg);
+  border-color: var(--badge-rep-unknown-border);
+  color: var(--badge-rep-unknown-text);
+  font-weight: 600;
 }
 
 .code-badge {
@@ -487,12 +662,31 @@ select.form-control option {
   padding: 0.15rem 0.4rem;
   border-radius: 4px;
   font-size: 0.8rem;
-  color: #38bdf8;
+  color: var(--accent-cyan);
+  border: 1px solid var(--border-color);
 }
 
 .ip-text {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.85rem;
+}
+
+.ip-source {
+  color: #f87171;
+}
+
+.ip-dest {
+  color: var(--accent-cyan);
+}
+
+[data-theme="light"] .ip-source {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+[data-theme="light"] .ip-dest {
+  color: #0369a1;
+  font-weight: 600;
 }
 
 /* Empty state */
@@ -1105,6 +1299,113 @@ select.form-control option {
 [data-theme="light"] .password-checklist {
   background: #f8fafc;
   border-color: #e2e8f0;
+}
+
+/* --------------------------------------------------------------------------
+ * Light Mode Typography & High-Contrast Readability Overrides
+ * -------------------------------------------------------------------------- */
+[data-theme="light"] {
+  color: #0f172a;
+}
+
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4,
+[data-theme="light"] h5,
+[data-theme="light"] h6 {
+  color: #0f172a;
+}
+
+[data-theme="light"] .panel-title,
+[data-theme="light"] .stat-label {
+  color: #1e293b;
+}
+
+[data-theme="light"] .info-list dt {
+  color: #475569;
+}
+
+[data-theme="light"] .info-list dd {
+  color: #0f172a;
+}
+
+[data-theme="light"] code {
+  background: #f1f5f9;
+  color: #0369a1;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .nav-link {
+  color: #334155;
+}
+
+[data-theme="light"] .nav-link:hover {
+  color: #0284c7;
+  background: #f1f5f9;
+}
+
+[data-theme="light"] .nav-link.active {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+/* Light mode overrides for any hardcoded neon / pastel inline styles */
+[data-theme="light"] [style*="color: #38bdf8"],
+[data-theme="light"] [style*="color:#38bdf8"],
+[data-theme="light"] [style*="color: #7dd3fc"],
+[data-theme="light"] [style*="color:#7dd3fc"],
+[data-theme="light"] [style*="color: #a5f3fc"],
+[data-theme="light"] [style*="color:#a5f3fc"] {
+  color: #0369a1 !important;
+}
+
+[data-theme="light"] [style*="color: #f87171"],
+[data-theme="light"] [style*="color:#f87171"],
+[data-theme="light"] [style*="color: #ef4444"],
+[data-theme="light"] [style*="color:#ef4444"],
+[data-theme="light"] [style*="color: #fca5a5"],
+[data-theme="light"] [style*="color:#fca5a5"] {
+  color: #b91c1c !important;
+}
+
+[data-theme="light"] [style*="color: #fbbf24"],
+[data-theme="light"] [style*="color:#fbbf24"],
+[data-theme="light"] [style*="color: #f59e0b"],
+[data-theme="light"] [style*="color:#f59e0b"],
+[data-theme="light"] [style*="color: #fcd34d"],
+[data-theme="light"] [style*="color:#fcd34d"],
+[data-theme="light"] [style*="color: #fde68a"],
+[data-theme="light"] [style*="color:#fde68a"] {
+  color: #b45309 !important;
+}
+
+[data-theme="light"] [style*="color: #6ee7b7"],
+[data-theme="light"] [style*="color:#6ee7b7"],
+[data-theme="light"] [style*="color: #4ade80"],
+[data-theme="light"] [style*="color:#4ade80"],
+[data-theme="light"] [style*="color: #34d399"],
+[data-theme="light"] [style*="color:#34d399"],
+[data-theme="light"] [style*="color: #10b981"],
+[data-theme="light"] [style*="color:#10b981"] {
+  color: #15803d !important;
+}
+
+[data-theme="light"] [style*="color: #c4b5fd"],
+[data-theme="light"] [style*="color:#c4b5fd"],
+[data-theme="light"] [style*="color: #d8b4fe"],
+[data-theme="light"] [style*="color:#d8b4fe"],
+[data-theme="light"] [style*="color: #a78bfa"],
+[data-theme="light"] [style*="color:#a78bfa"] {
+  color: #6b21a8 !important;
+}
+
+[data-theme="light"] [style*="background: rgba(0, 0, 0, 0.25)"],
+[data-theme="light"] [style*="background: rgba(0,0,0,0.25)"],
+[data-theme="light"] [style*="background: rgba(0, 0, 0, 0.2)"],
+[data-theme="light"] [style*="background: rgba(0,0,0,0.2)"] {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
 }
 
 /* --------------------------------------------------------------------------

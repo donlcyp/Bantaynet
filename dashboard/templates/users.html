@@ -202,24 +202,24 @@
           </td>
           <td>
             {% if u.role == 'admin' %}
-              <span class="badge" style="background: rgba(56, 189, 248, 0.15); border-color: #38bdf8; color: #7dd3fc;">Admin</span>
+              <span class="badge badge-role-admin">Admin</span>
             {% elif u.role == 'analyst' %}
-              <span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7;">Analyst</span>
+              <span class="badge badge-role-analyst">Analyst</span>
             {% else %}
-              <span class="badge" style="background: rgba(167, 139, 250, 0.15); border-color: #a78bfa; color: #c4b5fd;">Viewer</span>
+              <span class="badge badge-role-viewer">Viewer</span>
             {% endif %}
           </td>
           <td>
             {% if u.is_2fa_enabled %}
-              <span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7; font-size: 0.72rem;">2FA Active</span>
+              <span class="badge badge-rep-clean" style="font-size: 0.72rem;">2FA Active</span>
             {% else %}
-              <span class="badge" style="background: rgba(148, 163, 184, 0.15); border-color: #64748b; color: #94a3b8; font-size: 0.72rem;">Disabled</span>
+              <span class="badge badge-rep-unknown" style="font-size: 0.72rem;">Disabled</span>
             {% endif %}
           </td>
           <td style="font-size: 0.82rem; color: var(--text-muted);">{{ u.created_at[:19] if u.created_at else '-' }}</td>
           <td>
             {% if u.is_virtual %}
-              <span class="badge" style="background: rgba(148, 163, 184, 0.15); border-color: #64748b; color: #94a3b8; font-size: 0.72rem;">Virtual Test Account</span>
+              <span class="badge badge-rep-unknown" style="font-size: 0.72rem;">Virtual Test Account</span>
             {% else %}
               <form method="POST" action="{{ url_for('change_user_role', user_id=u.id) }}" style="display: flex; gap: 0.4rem; align-items: center;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

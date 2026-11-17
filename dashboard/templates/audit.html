@@ -85,18 +85,18 @@
         <tr>
           <td style="color: var(--text-dim); font-weight: 600;">#{{ log.id }}</td>
           <td style="font-size: 0.82rem; color: var(--text-muted); white-space: nowrap;">{{ log.timestamp[:19] }}</td>
-          <td style="font-weight: 600; color: #38bdf8;">{{ log.username }}</td>
+          <td style="font-weight: 600; color: var(--accent-cyan);">{{ log.username }}</td>
           <td>
             {% if log.action == 'login' %}
-              <span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7;">LOGIN</span>
+              <span class="badge badge-role-analyst">LOGIN</span>
             {% elif log.action == 'logout' %}
-              <span class="badge" style="background: rgba(148, 163, 184, 0.15); border-color: #94a3b8; color: #cbd5e1;">LOGOUT</span>
+              <span class="badge badge-rep-unknown">LOGOUT</span>
             {% elif log.action == 'upload_pcap' %}
-              <span class="badge" style="background: rgba(56, 189, 248, 0.15); border-color: #38bdf8; color: #7dd3fc;">UPLOAD</span>
+              <span class="badge badge-status-new">UPLOAD</span>
             {% elif log.action == 'update_alert' %}
-              <span class="badge" style="background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #fcd34d;">TRIAGE</span>
+              <span class="badge badge-status-investigating">TRIAGE</span>
             {% elif 'user' in log.action or 'role' in log.action %}
-              <span class="badge" style="background: rgba(168, 85, 247, 0.15); border-color: #a855f7; color: #d8b4fe;">ADMIN</span>
+              <span class="badge badge-role-viewer">ADMIN</span>
             {% else %}
               <span class="code-badge">{{ log.action }}</span>
             {% endif %}

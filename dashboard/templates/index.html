@@ -7,19 +7,19 @@
 <div class="stats-grid">
   <div class="stat-card total">
     <div class="stat-label">Total Detections</div>
-    <div class="stat-value" style="color: #38bdf8;">{{ stats.total }}</div>
+    <div class="stat-value stat-total">{{ stats.total }}</div>
   </div>
   <div class="stat-card high">
     <div class="stat-label">High Severity</div>
-    <div class="stat-value" style="color: #f87171;">{{ stats.high }}</div>
+    <div class="stat-value stat-high">{{ stats.high }}</div>
   </div>
   <div class="stat-card medium">
     <div class="stat-label">Medium Severity</div>
-    <div class="stat-value" style="color: #fbbf24;">{{ stats.medium }}</div>
+    <div class="stat-value stat-med">{{ stats.medium }}</div>
   </div>
   <div class="stat-card low">
     <div class="stat-label">Low Severity</div>
-    <div class="stat-value" style="color: #60a5fa;">{{ stats.low }}</div>
+    <div class="stat-value stat-low">{{ stats.low }}</div>
   </div>
 </div>
 
@@ -199,7 +199,7 @@
           <td>
             <span class="badge badge-status-{{ a.status }}">{{ a.status|replace('_', ' ')|title }}</span>
           </td>
-          <td style="font-size: 0.82rem; color: #a5f3fc; font-weight: 500;">
+          <td style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 600;">
             {{ a.client_name or 'Default' }}
           </td>
           <td>
@@ -225,20 +225,20 @@
           <td>
             {% if a.reputation_score is not none %}
               {% if a.reputation_score >= 75 %}
-                <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
+                <span class="badge badge-rep-malicious" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
                   {{ a.reputation_score }}% Abuse
                 </span>
               {% elif a.reputation_score >= 25 %}
-                <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
+                <span class="badge badge-rep-suspicious" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
                   {{ a.reputation_score }}% Suspicious
                 </span>
               {% else %}
-                <span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
+                <span class="badge badge-rep-clean" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
                   {{ a.reputation_score }}% Clean
                 </span>
               {% endif %}
             {% elif a.reputation_note %}
-              <span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
+              <span class="badge badge-rep-unknown" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;" title="{{ a.reputation_note|e }}">
                 {{ a.reputation_note|e }}
               </span>
             {% else %}
@@ -248,7 +248,7 @@
           <td class="ip-text">{{ a.dst_ip or '-' }}</td>
           <td>
             {% if a.dst_port and a.dst_port != '-' %}
-              <span class="code-badge" style="color: #fbbf24;">{{ a.dst_port }}</span>
+              <span class="code-badge">{{ a.dst_port }}</span>
             {% else %}
               <span style="color: var(--text-dim);">-</span>
             {% endif %}
@@ -260,7 +260,7 @@
 
           <td style="font-size: 0.8rem; color: var(--text-muted);">{{ a.source_pcap or '-' }}</td>
           <td>
-            <span style="background: rgba(255,255,255,0.06); padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem;">
+            <span class="badge" style="background: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border-color); padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem;">
               {{ a.packet_count }}
             </span>
           </td>
