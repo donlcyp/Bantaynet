@@ -3,6 +3,7 @@ venv/
 .venv/
 env/
 ENV/
+node_modules/
 
 # Environment secrets
 .env
