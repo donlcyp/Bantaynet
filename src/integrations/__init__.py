@@ -89,36 +89,24 @@ def dispatch_abuseipdb(normalized_alerts: list[dict[str, Any]], cfg: Config) -> 
         return 0
 
 
-def dispatch_syslog(normalized_alerts: list[dict[str, Any]], cfg: Config) -> int:
-    """Forward alerts to Syslog / SIEM if enabled (T5)."""
-    try:
-        from src.integrations.syslog_out import send_syslog_alerts
-        return send_syslog_alerts(normalized_alerts, cfg)
-    except ImportError:
-        return 0
-    except Exception as exc:
-        logger.warning("Syslog dispatch error: %s", exc)
-        return 0
-
-
 def dispatch(
     alerts: list[Any],
     client_name: str = "Default",
     cfg: Config | None = None,
 ) -> dict[str, Any]:
-    """Execute all configured notification and SIEM integrations independently.
+    """Execute all configured notification and threat intelligence integrations independently.
 
     Guarantees that a failure in one integration never stops or affects the others.
     """
     if not alerts:
-        return {"email": 0, "telegram": 0, "abuseipdb": 0, "syslog": 0}
+        return {"email": 0, "telegram": 0, "abuseipdb": 0}
 
     if cfg is None:
         try:
             cfg = src.config.load_config()
         except Exception as exc:
             logger.warning("Failed to load config for integrations dispatch: %s", exc)
-            return {"email": 0, "telegram": 0, "abuseipdb": 0, "syslog": 0}
+            return {"email": 0, "telegram": 0, "abuseipdb": 0}
 
     normalized = [_normalize_alert(a, client_name) for a in alerts]
     results: dict[str, int] = {}
@@ -143,13 +131,6 @@ def dispatch(
     except Exception as exc:
         logger.warning("AbuseIPDB integration failed: %s", exc)
         results["abuseipdb"] = 0
-
-    # 4. Syslog / SIEM export
-    try:
-        results["syslog"] = dispatch_syslog(normalized, cfg)
-    except Exception as exc:
-        logger.warning("Syslog integration failed: %s", exc)
-        results["syslog"] = 0
 
     return results
 

@@ -5,7 +5,6 @@
 [![Packet Engine](https://img.shields.io/badge/Engine-Scapy-red.svg?logo=wireshark&logoColor=white)](https://scapy.net/)
 [![MITRE ATT&CK](https://img.shields.io/badge/Security-MITRE%20ATT%26CK%20Mapped-orange.svg)](https://attack.mitre.org/)
 [![Database](https://img.shields.io/badge/Storage-Postgres%20%7C%20MySQL%20%7C%20SQLite-00758F.svg?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Integrations](https://img.shields.io/badge/SIEM-CEF%20%7C%20JSON%20Syslog-purple.svg)](https://www.microfocus.com/)
 [![Tests](https://img.shields.io/badge/Tests-pytest%20Passing-brightgreen.svg?logo=pytest&logoColor=white)](https://pytest.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -15,7 +14,7 @@
 
 > **IMPORTANT:** BantayNet is designed strictly as a **detect-and-alert** passive analysis and digital forensics system.
 > * **No Offensive Capabilities:** BantayNet never crafts or injects network packets onto live networks, never scans hosts, never floods services, and never alters or blocks traffic.
-> * **Outbound-Only Integrations:** All notification, threat intelligence, and SIEM forwarders are strictly outbound, off by default, and isolated. A network or API failure in an integration will never interrupt, slow down, or stop packet analysis.
+> * **Outbound-Only Integrations:** All notification and threat intelligence integrations are strictly outbound, off by default, and isolated. A network or API failure in an integration will never interrupt, slow down, or stop packet analysis.
 > * **Authorized Analysis Only:** Use BantayNet exclusively on authorized capture files (`.pcap`/`.pcapng`) and lab network environments.
 
 ---
@@ -34,7 +33,7 @@
   * **Cleartext Protocols (`Policy`):** Unencrypted transmission of credentials (Telnet, FTP, POP3, IMAP).
   * **ICMP Flood (`T1498`):** High-rate ICMP echo request bursts indicative of denial-of-service.
 * **Forensic Evidence Snippets:** Automatically carves and SHA-256 hashes isolated mini-PCAP snippets containing only the matching packets for forensic integrity.
-* **Threat Intelligence & SIEM Export:** Enriches public IP addresses using AbuseIPDB and streams alerts to SIEM platforms (Wazuh, Graylog, Splunk, ArcSight) via ArcSight CEF:0 and JSON Syslog over UDP or TCP.
+* **Threat Intelligence:** Enriches public IP addresses using AbuseIPDB with 24-hour caching.
 * **Executive & Dossier PDF Reports:** One-click generation of audit-ready summary and incident dossiers with cryptographic hash verification.
 * **Flexible Storage:** Native support for Supabase / PostgreSQL and XAMPP MySQL/MariaDB with automatic zero-configuration fallback to local SQLite (`bantaynet.db`).
 * **Role-Based Access Control (RBAC):** Admin, Analyst, and Viewer roles with TOTP 2FA, emergency backup codes, and tamper-evident audit logging.
@@ -142,13 +141,7 @@ All integrations are outbound only, off by default, and configured via `rules/ru
 | Integration | Config Path (`rules/rules.yaml`) | Environment Variables | Protocol & Default Port | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | **Alert Email** | `notifications.enabled` | `GMAIL_WEBHOOK_URL`, `GMAIL_USER`, `GMAIL_APP_PASSWORD` | HTTPS (443) or SMTP (587) | Sends alert notifications to on-call SOC mailboxes when alerts meet `min_severity`. |
-| **Syslog / SIEM** | `integrations.syslog.enabled` | None *(configured in rules.yaml)* | UDP or TCP (Port 514) | Streams ArcSight CEF:0 or JSON logs to Wazuh, Graylog, Splunk, or QRadar. |
 | **AbuseIPDB** | `integrations.abuseipdb.enabled` | `ABUSEIPDB_API_KEY` | HTTPS (443) | Enriches public source IPs with abuse scores and reports. Caches lookups for 24 hours. |
-
-### Sample Syslog CEF Output:
-```text
-CEF:0|BantayNet|BantayNet|1.0|port_scan|Network Service Discovery|high|src=10.0.0.66 dst=10.0.0.10 proto=TCP cs1=T1046 cs1Label=mitre rt=1760000002000
-```
 
 ---
 
@@ -195,7 +188,6 @@ pytest -v
 
 The automated test suite verifies:
 * All 7 detection rule algorithms, sliding window logic, and cooldown suppression.
-* ArcSight CEF:0 and JSON Syslog formatting, character escaping, and UDP/TCP transmission.
 * AbuseIPDB IP reputation lookup, public vs. private IP filtering, caching, and error resilience.
 * Database operations across SQLite, MySQL, and PostgreSQL with safe migrations.
 * RBAC authentication, session security, password policies, and 2FA enforcement.

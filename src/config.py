@@ -126,16 +126,6 @@ class NotificationSettings:
 
 
 @dataclass(frozen=True)
-class SyslogSettings:
-    enabled: bool = False
-    host: str = "localhost"
-    port: int = 514
-    protocol: str = "udp"
-    format: str = "cef"
-    min_severity: str = "low"
-
-
-@dataclass(frozen=True)
 class TelegramSettings:
     enabled: bool = False
     min_severity: str = "high"
@@ -150,7 +140,6 @@ class AbuseIPDBSettings:
 
 @dataclass(frozen=True)
 class IntegrationsSettings:
-    syslog: SyslogSettings = field(default_factory=SyslogSettings)
     telegram: TelegramSettings = field(default_factory=TelegramSettings)
     abuseipdb: AbuseIPDBSettings = field(default_factory=AbuseIPDBSettings)
 
@@ -242,21 +231,6 @@ def _build_section(section: str, cls: type, raw: Any) -> Any:
             if value not in SEVERITIES:
                 raise ConfigError(f"{section}.{key} must be one of {SEVERITIES}, got {value!r}")
             kwargs[key] = value
-        elif key == "protocol" and "syslog" in section:
-            val_str = str(value).lower()
-            if val_str not in ("udp", "tcp"):
-                raise ConfigError(f"{section}.protocol must be 'udp' or 'tcp', got {value!r}")
-            kwargs[key] = val_str
-        elif key == "format" and "syslog" in section:
-            val_str = str(value).lower()
-            if val_str not in ("cef", "json"):
-                raise ConfigError(f"{section}.format must be 'cef' or 'json', got {value!r}")
-            kwargs[key] = val_str
-        elif key == "port" and "syslog" in section:
-            val_int = _check_type(section, key, value, int)
-            if not 1 <= val_int <= 65535:
-                raise ConfigError(f"{section}.port must be between 1 and 65535, got {val_int}")
-            kwargs[key] = val_int
         else:
             kwargs[key] = _check_type(section, key, value, field_type)
     return cls(**kwargs)

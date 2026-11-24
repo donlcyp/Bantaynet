@@ -157,18 +157,18 @@ def test_dispatcher_isolation_one_failure_does_not_stop_others():
     )
     alerts = [_make_alert(severity="high")]
 
-    # Mock email to raise an unhandled exception, while telegram succeeds
+    # Mock email to raise an unhandled exception, while telegram and abuseipdb succeed
     with patch("src.integrations.dispatch_email", side_effect=Exception("Email module fatal crash")), \
          patch("src.integrations.dispatch_telegram", return_value=1) as mock_tg, \
-         patch("src.integrations.dispatch_syslog", return_value=1) as mock_syslog:
+         patch("src.integrations.dispatch_abuseipdb", return_value=1) as mock_abuse:
         
         results = dispatch(alerts, client_name="Branch-1", cfg=cfg)
         
         # Email failed and reported 0
         assert results["email"] == 0
-        # But telegram and syslog were still called and completed!
+        # But telegram and abuseipdb were still called and completed!
         assert results["telegram"] == 1
-        assert results["syslog"] == 1
+        assert results["abuseipdb"] == 1
         mock_tg.assert_called_once()
-        mock_syslog.assert_called_once()
+        mock_abuse.assert_called_once()
 
