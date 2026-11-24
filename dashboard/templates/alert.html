@@ -267,7 +267,7 @@
 
       {% if alert.details %}
         {% for k, v in alert.details.items() %}
-          {% if k not in ['evidence_sha256', 'source_pcap_sha256'] %}
+          {% if k not in ['evidence_sha256', 'source_pcap_sha256', 'evidence_b64'] %}
           <dt>{{ k|replace('_', ' ')|title }}</dt>
           <dd>
             {% if v is sequence and v is not string %}

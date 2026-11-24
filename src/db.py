@@ -504,8 +504,28 @@ VALID_ROLES = ("admin", "analyst", "viewer")
 
 
 def _get_static_test_accounts() -> dict[str, dict[str, Any]]:
-    """In-memory test accounts available strictly during automated test runs."""
+    """In-memory test accounts available strictly during automated test runs or local development.
+    
+    Hard security lock: Never active in production or cloud hosting (Render, Railway, Fly, Heroku,
+    or when FLASK_ENV/ENVIRONMENT/ENV is production).
+    """
     import os
+
+    # Hard guard against production / cloud hosting environments:
+    is_cloud_prod = bool(
+        os.environ.get("RENDER")
+        or os.environ.get("RENDER_SERVICE_ID")
+        or os.environ.get("IS_RENDER")
+        or os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("FLY_APP_NAME")
+        or os.environ.get("HEROKU_APP_ID")
+        or os.environ.get("FLASK_ENV", "").lower() == "production"
+        or os.environ.get("ENVIRONMENT", "").lower() == "production"
+        or os.environ.get("ENV", "").lower() == "production"
+    )
+    if is_cloud_prod:
+        return {}
+
     if not (os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("BANTAYNET_ENABLE_TEST_ACCOUNTS") == "1"):
         return {}
 

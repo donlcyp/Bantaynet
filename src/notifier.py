@@ -604,6 +604,103 @@ def send_account_created_email(
         return False, err
 
 
+def send_password_reset_email(
+    to_email: str,
+    username: str,
+    temp_password: str,
+    login_url: str = "",
+) -> tuple[bool, str]:
+    """Notify an operator that their password was reset and provide a temporary password.
+
+    Returns (success: bool, message: str).
+    """
+    to_email = (to_email or "").strip()
+    if not to_email:
+        return False, "Recipient email address is missing."
+
+    conf = _get_smtp_credentials()
+    has_https_api = _has_https_api()
+
+    if not conf["password"] and not has_https_api:
+        logger.warning(
+            "Email credentials not configured; cannot email password reset for '%s' to %s",
+            username,
+            to_email,
+        )
+        return False, "Email service is not configured (set GMAIL_WEBHOOK_URL, MAILTRAP_API_TOKEN, or GMAIL_APP_PASSWORD)."
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "[BantayNet SOC] Password Reset - Temporary Login Credentials"
+        msg["From"] = conf["sender"]
+        msg["To"] = to_email
+
+        portal_link = login_url or "http://localhost:5000/login"
+        text_content = (
+            f"Hello {username},\n\n"
+            f"An administrator has reset your BantayNet SOC account password.\n\n"
+            f"Temporary Login Details:\n"
+            f"----------------------------------------\n"
+            f"Username:           {username}\n"
+            f"Temporary Password: {temp_password}\n"
+            f"Portal URL:         {portal_link}\n\n"
+            f"IMPORTANT SECURITY NOTICE:\n"
+            f"You will be required to change this temporary password immediately after signing in.\n"
+            f"If you did not request a password reset, please contact your SOC administrator immediately.\n\n"
+            f"-- BantayNet Security Operations Team\n"
+        )
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; background: #0b1528; border: 1px solid #1e3a5f; border-radius: 8px; color: #f1f5f9;">
+          <div style="border-bottom: 1px solid #1e3a5f; padding-bottom: 12px; margin-bottom: 20px;">
+            <h2 style="color: #38bdf8; margin: 0; font-size: 1.3rem;">Bantay<span style="color: #ffffff;">Net</span> Password Reset</h2>
+            <div style="color: #94a3b8; font-size: 0.8rem; margin-top: 4px;">Security Operations Center Access</div>
+          </div>
+          <p style="font-size: 0.95rem; color: #cbd5e1;">Hello <strong>{username}</strong>,</p>
+          <p style="font-size: 0.9rem; color: #94a3b8;">Your account password has been reset. Use the temporary credentials below to sign in:</p>
+          <div style="background: #070e1c; border: 1px solid #1e3a5f; border-radius: 6px; padding: 16px; margin: 20px 0; font-family: monospace; font-size: 0.9rem;">
+            <div style="margin-bottom: 8px;"><span style="color: #94a3b8;">Username:</span> <strong style="color: #38bdf8;">{username}</strong></div>
+            <div><span style="color: #94a3b8;">Temporary Password:</span> <strong style="color: #f59e0b;">{temp_password}</strong></div>
+          </div>
+          <div style="background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 12px; margin-bottom: 20px; font-size: 0.82rem; color: #fde68a;">
+            <strong>Mandatory Password Change Required:</strong><br>
+            For your security, you will be prompted to set a new personal password immediately after logging in with this temporary password.
+          </div>
+          <div style="text-align: center; margin: 25px 0;">
+            <a href="{portal_link}" style="display: inline-block; background: #0284c7; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 0.9rem;">
+              Sign In &amp; Change Password &rarr;
+            </a>
+          </div>
+          <div style="border-top: 1px solid #1e3a5f; padding-top: 14px; margin-top: 25px; font-size: 0.75rem; color: #475569;">
+            If you did not request this password reset, contact your SOC administrator immediately.<br>
+            This email was sent automatically by the BantayNet Security Operations Platform.
+          </div>
+        </div>
+        """
+
+        msg.attach(MIMEText(text_content, "plain"))
+        msg.attach(MIMEText(html_content, "html"))
+
+        # Priority 1: Check HTTPS REST API (Port 443 - works on Render free tier)
+        api_res = _send_via_https_api(to_email, msg["Subject"], html_content, text_content, conf["sender"])
+        if api_res is not None:
+            return api_res
+
+        server = _connect_smtp(conf["server"], conf["port"], use_tls=conf["use_tls"], timeout=10)
+        if conf["user"] and conf["password"]:
+            server.login(conf["user"], conf["password"])
+
+        server.send_message(msg)
+        server.quit()
+        logger.info("Successfully sent password reset email to %s for user '%s'", to_email, username)
+        return True, "Password reset email with temporary credentials delivered successfully."
+
+    except Exception as exc:
+        err = f"Could not send password reset email: {exc}"
+        logger.error(err)
+        return False, err
+
+
 def send_alert_email(
     alert: dict[str, Any],
     settings: NotificationSettings | Any | None = None,

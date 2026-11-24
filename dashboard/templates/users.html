@@ -234,8 +234,14 @@
             {% endif %}
           </td>
           <td>
-            <div style="display: flex; gap: 0.35rem; align-items: center;">
+            <div style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap;">
               {% if not u.is_virtual %}
+                <form method="POST" action="{{ url_for('admin_reset_password', user_id=u.id) }}" onsubmit="return confirm('Reset password for \'{{ u.username }}\' and send a temporary password via email?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; height: 30px; color: #f59e0b; border-color: rgba(245,158,11,0.35);" title="Generate temporary password and email user">
+                    Reset Password
+                  </button>
+                </form>
                 <form method="POST" action="{{ url_for('admin_toggle_2fa', user_id=u.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; height: 30px;" title="Toggle Two-Factor Authentication">

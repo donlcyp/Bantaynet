@@ -73,7 +73,7 @@ from src.db import (
     update_user_role,
 )
 from src.export import write_alerts_csv
-from src.notifier import send_2fa_otp_email, send_account_created_email
+from src.notifier import send_2fa_otp_email, send_account_created_email, send_password_reset_email
 from src.report_pdf import generate_alert_pdf, generate_summary_pdf
 from src.security import validate_email_standards, validate_password_standards, validate_username_standards
 from src.store import store_alerts
@@ -154,6 +154,8 @@ def security_and_auth_middleware():
             session.clear()
             log_audit_event(uname, "session_timeout", "Web Portal", f"Auto-logged out after {INACTIVITY_TIMEOUT_SECONDS // 60}m inactivity")
             flash("Session expired due to inactivity. For security, please sign in again.", "error")
+            if request.path.rstrip("/") in ("/logout", "/login", "/login/2fa"):
+                return redirect(url_for("login"))
             return redirect(url_for("login", next=request.url))
         session["last_activity"] = now_ts
 
@@ -284,6 +286,16 @@ def is_safe_url(target: str) -> bool:
     ref_url = urlsplit(request.host_url)
     test_url = urlsplit(urljoin(request.host_url, target))
     return test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc
+
+
+def _resolve_post_login_next(raw_next: str | None) -> str:
+    """Resolve a safe post-login redirect URL, never redirecting back to /logout or /login."""
+    if not raw_next or not is_safe_url(raw_next):
+        return url_for("index")
+    path = urlsplit(urljoin(request.host_url, raw_next)).path.rstrip("/") or "/"
+    if path in ("/logout", "/login", "/login/2fa"):
+        return url_for("index")
+    return raw_next
 
 
 # Rate limiting storage for login endpoint
@@ -517,7 +529,7 @@ def login():
         return redirect(url_for("index"))
 
     raw_next = request.args.get("next") or request.form.get("next") or url_for("index")
-    next_url = raw_next if is_safe_url(raw_next) else url_for("index")
+    next_url = _resolve_post_login_next(raw_next)
 
     if request.method == "POST":
         username = (request.form.get("username") or request.form.get("identifier") or "").strip()
@@ -615,7 +627,7 @@ def login_2fa():
         return redirect(url_for("login"))
 
     client_ip = request.remote_addr or "127.0.0.1"
-    next_url = session.get("2fa_pending_next") or url_for("index")
+    next_url = _resolve_post_login_next(session.get("2fa_pending_next"))
 
     if request.method == "POST":
         code = request.form.get("code", "").strip()
@@ -867,6 +879,74 @@ def add_user():
         flash(f"Account creation failed: {exc}", "error")
     except Exception as exc:
         flash(f"Unexpected error creating user: {exc}", "error")
+
+    return redirect(url_for("manage_users"))
+
+
+@app.route("/users/<int:user_id>/reset-password", methods=["POST"])
+@role_required("admin")
+def admin_reset_password(user_id: int):
+    user = get_user_by_id(user_id)
+    if not user:
+        abort(404, description="User not found")
+    if user.get("is_virtual") or user_id <= 0:
+        flash("Virtual test accounts cannot have their passwords reset here.", "error")
+        return redirect(url_for("manage_users"))
+
+    # Generate a strong, readable temporary password that passes all policy checks
+    upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    lower = "abcdefghijkmnopqrstuvwxyz"
+    digits = "23456789"
+    special = "!@#$%"
+    chars = [
+        secrets.choice(upper),
+        secrets.choice(upper),
+        secrets.choice(lower),
+        secrets.choice(lower),
+        secrets.choice(lower),
+        secrets.choice(digits),
+        secrets.choice(digits),
+        secrets.choice(special),
+    ] + [secrets.choice(upper + lower + digits) for _ in range(4)]
+    secrets.SystemRandom().shuffle(chars)
+    temp_password = "".join(chars)
+
+    try:
+        update_user_password(user_id, temp_password, must_change_password=True)
+        admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
+        email = (user.get("email") or "").strip()
+        email_info = f", Email: {email}" if email else ", Email: none"
+        log_audit_event(
+            admin_user,
+            "reset_password",
+            f"User #{user_id} ({user['username']})",
+            f"Temporary password issued; mandatory change enforced{email_info}",
+        )
+
+        if email:
+            sent_ok, send_msg = send_password_reset_email(
+                email,
+                user["username"],
+                temp_password,
+                url_for("login", _external=True),
+            )
+            if sent_ok:
+                flash(
+                    f"Password reset for '{user['username']}'. A temporary password has been emailed to {email}. The user must change it upon next sign-in.",
+                    "success",
+                )
+            else:
+                flash(
+                    f"Password reset for '{user['username']}' (temporary password: {temp_password}), but email delivery failed: {send_msg}. Please share it manually.",
+                    "warning",
+                )
+        else:
+            flash(
+                f"Password reset for '{user['username']}'. No email address is on file — temporary password: {temp_password} (user must change it upon next sign-in).",
+                "warning",
+            )
+    except Exception as exc:
+        flash(f"Error resetting password: {exc}", "error")
 
     return redirect(url_for("manage_users"))
 

@@ -98,7 +98,7 @@ integrations:
     format: "cef"            # "cef" or "json"
     min_severity: "low"      # "low", "medium", or "high"
   abuseipdb:
-    enabled: false
+    enabled: true
     max_age_days: 90
     cache_hours: 24
 
