@@ -21,6 +21,10 @@
     <div class="stat-label">Low Severity</div>
     <div class="stat-value stat-low">{{ stats.low }}</div>
   </div>
+  <a href="{{ url_for('index', flagged='1') }}" class="stat-card flagged" style="text-decoration: none; cursor: pointer;" title="View alerts flagged by Security Monitor for Analyst review">
+    <div class="stat-label">Flagged for Review</div>
+    <div class="stat-value">{{ stats.flagged | default(0) }}</div>
+  </a>
 </div>
 
 <!-- Interactive Visual Analytics -->
@@ -70,9 +74,9 @@
   </div>
 </div>
 
-{% if current_user and current_user.role in ['admin', 'analyst'] %}
+{% if current_user %}
 <!-- Filters Panel (Collapsible) -->
-{% set active_filters_count = (1 if filters.rule else 0) + (1 if filters.severity else 0) + (1 if filters.status else 0) + (1 if filters.client_name else 0) + (1 if filters.src_ip else 0) + (1 if filters.search else 0) %}
+{% set active_filters_count = (1 if filters.rule else 0) + (1 if filters.severity else 0) + (1 if filters.status else 0) + (1 if filters.client_name else 0) + (1 if filters.src_ip else 0) + (1 if filters.search else 0) + (1 if filters.flagged else 0) %}
 <div class="panel" id="filterPanel" data-active-filters="{{ active_filters_count }}">
 
   <div class="panel-title" style="margin-bottom: 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
@@ -149,8 +153,16 @@
       </div>
 
       <div class="form-group">
-        <label for="search">Keywords / Subnets</label>
-        <input type="text" name="search" id="search" class="form-control" placeholder="Search description, pcap, IP..." value="{{ filters.search }}">
+        <label for="flagged">Review Queue</label>
+        <select name="flagged" id="flagged" class="form-control">
+          <option value="">All Alerts</option>
+          <option value="1" {% if filters.flagged == '1' %}selected{% endif %}>Flagged by Security Monitor</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="search">Keywords / Ports / IPs</label>
+        <input type="text" name="search" id="search" class="form-control" placeholder="Search port, IP, pcap, description..." value="{{ filters.search }}">
       </div>
 
       <button type="submit" class="btn btn-primary" style="height: 38px;">Apply Filters</button>
@@ -162,9 +174,14 @@
 
 
 <!-- Alerts Table -->
-<div class="panel" style="padding: 0; overflow: hidden;">
-  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-    <h2 style="font-size: 1rem; font-weight: 600;">Incident History</h2>
+<div id="incident-history" class="panel" style="padding: 0; overflow: hidden;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+      <h2 style="font-size: 1rem; font-weight: 600;">Active Incident History</h2>
+      <a href="{{ url_for('archive_view') }}" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 0.25rem 0.65rem;">
+        View Archive ({{ stats.archived | default(0) }}) &rarr;
+      </a>
+    </div>
     <div style="font-size: 0.8rem; color: var(--text-dim); display: flex; align-items: center; gap: 0.4rem;">
       <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span>
       <span>{{ db_engine_name }}</span>
@@ -197,7 +214,14 @@
         <tr>
           <td style="color: var(--text-dim); font-weight: 600;">#{{ a.id }}</td>
           <td>
-            <span class="badge badge-status-{{ a.status }}">{{ a.status|replace('_', ' ')|title }}</span>
+            <div style="display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start;">
+              <span class="badge badge-status-{{ a.status }}">{{ a.status|replace('_', ' ')|title }}</span>
+              {% if a.flagged_for_review %}
+              <span class="badge badge-flagged" title="Flagged by {{ a.flagged_by }}: {{ a.flag_reason }}{% if a.flag_note %} — {{ a.flag_note }}{% endif %}">
+                &#9873; Flagged
+              </span>
+              {% endif %}
+            </div>
           </td>
           <td style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 600;">
             {{ a.client_name or 'Default' }}

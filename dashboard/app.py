@@ -29,6 +29,7 @@ from flask import (
     session,
     url_for,
 )
+from markupsafe import Markup, escape as html_escape
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -49,18 +50,24 @@ from src.analyze import analyze
 from src.config import ConfigError, DEFAULT_RULES_PATH, load_config, save_rules_config
 from src.evidence import calculate_sha256
 from src.db import (
+    add_alert_comment,
     authenticate_user,
+    clear_alert_flag,
     clear_alerts,
     consume_backup_code,
+    create_password_reset_request,
     create_user,
     delete_alert,
     delete_user,
+    flag_alert_for_review,
     generate_backup_codes,
     get_alert_by_id,
+    get_alert_comments,
     get_alerts,
     get_all_users,
     get_audit_logs,
     get_chart_data,
+    get_notifications_for_user,
     get_summary_stats,
     get_user_by_email,
     get_user_by_id,
@@ -68,6 +75,9 @@ from src.db import (
     init_db,
     is_default_admin_password_active,
     log_audit_event,
+    mark_alert_messages_read,
+    mark_all_messages_read,
+    resolve_password_reset_requests,
     toggle_user_2fa,
     update_user_password,
     update_user_role,
@@ -85,6 +95,32 @@ app = Flask(
     template_folder=str(PROJECT_ROOT / "dashboard" / "templates"),
     static_folder=str(PROJECT_ROOT / "dashboard" / "static"),
 )
+
+
+@app.template_filter("highlight_mentions")
+def highlight_mentions_filter(text: Any) -> Markup:
+    """Safely escape SOC chat text and highlight @username mentions."""
+    escaped = str(html_escape(text or ""))
+    highlighted = re.sub(
+        r"(^|[^A-Za-z0-9_.-])(@[A-Za-z0-9_.-]{2,64})",
+        r'\1<span class="soc-mention">\2</span>',
+        escaped,
+    )
+    return Markup(highlighted)
+
+
+ROLE_DISPLAY_LABELS = {
+    "viewer": "Security Monitor",
+    "analyst": "Analyst",
+    "admin": "Admin",
+}
+
+
+@app.template_filter("role_label")
+def role_label_filter(role: Any) -> str:
+    """Return the user-facing display label for an internal role key."""
+    key = str(role or "").strip().lower()
+    return ROLE_DISPLAY_LABELS.get(key, key.title() if key else "User")
 
 # Deployment & Session Security Configurations
 app.secret_key = os.environ.get("BANTAYNET_SECRET_KEY") or secrets.token_hex(32)
@@ -120,6 +156,9 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # Inactivity auto-logout timeout window (default: 15 minutes, configurable via BANTAYNET_INACTIVITY_MINUTES)
 INACTIVITY_TIMEOUT_SECONDS = int(os.environ.get("BANTAYNET_INACTIVITY_MINUTES", 15)) * 60
 
+# Per-process server boot token: restarting `python -m dashboard.app` automatically invalidates old sessions
+SERVER_BOOT_TOKEN = secrets.token_hex(16)
+
 
 def generate_csrf_token() -> str:
     """Generate or retrieve a cryptographically secure CSRF token for the session."""
@@ -143,21 +182,27 @@ def security_and_auth_middleware():
                 )
                 abort(403, description="CSRF security validation failed: missing or invalid security token.")
 
-    # 2. Inactivity Session Timeout Enforcement
+    # 2. Server-Restart & Inactivity Session Timeout Enforcement
     user_id = session.get("user_id")
     if user_id is not None and not (app.config.get("TESTING") and not app.config.get("FORCE_AUTH_TESTING")):
-        last_activity = session.get("last_activity")
-        now_ts = time.time()
-        if last_activity and (now_ts - last_activity > INACTIVITY_TIMEOUT_SECONDS):
-            expired_user = get_user_by_id(user_id)
-            uname = expired_user.get("username", "operator") if expired_user else "operator"
+        if session.get("boot_token") != SERVER_BOOT_TOKEN:
             session.clear()
-            log_audit_event(uname, "session_timeout", "Web Portal", f"Auto-logged out after {INACTIVITY_TIMEOUT_SECONDS // 60}m inactivity")
-            flash("Session expired due to inactivity. For security, please sign in again.", "error")
-            if request.path.rstrip("/") in ("/logout", "/login", "/login/2fa"):
+            if request.path.rstrip("/") not in ("/logout", "/login", "/login/2fa"):
                 return redirect(url_for("login"))
-            return redirect(url_for("login", next=request.url))
-        session["last_activity"] = now_ts
+            user_id = None
+        else:
+            last_activity = session.get("last_activity")
+            now_ts = time.time()
+            if last_activity and (now_ts - last_activity > INACTIVITY_TIMEOUT_SECONDS):
+                expired_user = get_user_by_id(user_id)
+                uname = expired_user.get("username", "operator") if expired_user else "operator"
+                session.clear()
+                log_audit_event(uname, "session_timeout", "Web Portal", f"Auto-logged out after {INACTIVITY_TIMEOUT_SECONDS // 60}m inactivity")
+                flash("Session expired due to inactivity. For security, please sign in again.", "error")
+                if request.path.rstrip("/") in ("/logout", "/login", "/login/2fa"):
+                    return redirect(url_for("login"))
+                return redirect(url_for("login", next=request.url))
+            session["last_activity"] = now_ts
 
     # 3. User Authentication Load
     if user_id is not None:
@@ -228,9 +273,31 @@ def inject_global_data():
         engine_name = "Supabase (PostgreSQL)" if conf.get("is_postgres") else "MySQL (XAMPP)"
     else:
         engine_name = "SQLite Fallback"
+    current_user = getattr(g, "current_user", None)
+    nav_notifications = {
+        "items": [],
+        "unread_items": [],
+        "read_items": [],
+        "flag_count": 0,
+        "message_count": 0,
+        "unread_count": 0,
+        "read_count": 0,
+        "total_count": 0,
+    }
+    if current_user:
+        try:
+            nav_notifications = get_notifications_for_user(
+                role=current_user.get("role", "viewer"),
+                username=current_user.get("username", ""),
+            )
+        except Exception:
+            pass
+    is_fresh_login = bool(session.pop("fresh_login", False)) if current_user and not request.path.startswith("/static/") else False
     return {
         "db_engine_name": engine_name,
-        "current_user": getattr(g, "current_user", None),
+        "current_user": current_user,
+        "is_fresh_login": is_fresh_login,
+        "nav_notifications": nav_notifications,
         "csrf_token": generate_csrf_token,
         "is_default_admin_pw": is_default_admin_password_active(),
         "session_inactivity_minutes": INACTIVITY_TIMEOUT_SECONDS // 60,
@@ -588,13 +655,16 @@ def login():
 
             # Single-factor login path
             session.clear()
+            session.permanent = False
             session["user_id"] = user["id"]
+            session["boot_token"] = SERVER_BOOT_TOKEN
+            session["fresh_login"] = True
             session["last_activity"] = time.time()
             # Ensure fresh CSRF token upon privilege change
             session["csrf_token"] = secrets.token_hex(32)
 
             log_audit_event(user["username"], "login", "Web Portal", f"Role: {user['role']}")
-            flash(f"Logged in successfully as {user['username']} ({user['role'].title()} role).", "success")
+            flash(f"Logged in successfully as {user['username']} ({role_label_filter(user['role'])} role).", "success")
 
             if user.get("must_change_password"):
                 return redirect(url_for("first_time_change_password"))
@@ -606,6 +676,48 @@ def login():
             flash("Authentication error: Invalid username or password. Please verify credentials.", "error")
 
     return render_template("login.html", next=next_url)
+
+
+@app.route("/contact-admin", methods=["POST"])
+def contact_admin_reset():
+    """Allow an operator on the login page to notify the IT Admin for a password reset."""
+    identifier = (request.form.get("reset_identifier") or "").strip()
+    note = (request.form.get("reset_note") or "").strip()
+    client_ip = request.remote_addr or "127.0.0.1"
+
+    if not identifier:
+        flash("Please enter your username or email address to request a password reset.", "error")
+        return redirect(url_for("login"))
+    if len(identifier) > 128 or len(note) > 400:
+        flash("Input exceeds allowed length limits.", "error")
+        return redirect(url_for("login"))
+
+    matched_user = get_user_by_username(identifier.lower()) or get_user_by_email(identifier.lower())
+    matched_username = matched_user.get("username") if matched_user else None
+    matched_email = matched_user.get("email") if matched_user else None
+
+    try:
+        create_password_reset_request(
+            identifier=identifier,
+            username=matched_username,
+            email=matched_email,
+            note=note,
+        )
+        log_audit_event(
+            matched_username or "anonymous",
+            "password_reset_request",
+            f"Identifier: {identifier}",
+            f"IP: {client_ip}" + (f" | Note: {note[:120]}" if note else ""),
+        )
+    except Exception as exc:
+        app.logger.warning(f"Failed to record password reset request: {exc}")
+
+    # Generic confirmation (never leak whether an account exists)
+    flash(
+        "Your password reset request has been sent to the IT Administrator. Once reset, you will receive temporary login credentials.",
+        "success",
+    )
+    return redirect(url_for("login"))
 
 
 
@@ -672,7 +784,10 @@ def login_2fa():
             session.pop("2fa_email", None)
             session.pop("2fa_username", None)
 
+            session.permanent = False
             session["user_id"] = pending_user["id"]
+            session["boot_token"] = SERVER_BOOT_TOKEN
+            session["fresh_login"] = True
             session["last_activity"] = time.time()
             session["csrf_token"] = secrets.token_hex(32)
 
@@ -866,7 +981,7 @@ def add_user():
         if email:
             sent_ok, send_msg = send_account_created_email(email, username, password, url_for("login", _external=True))
             if sent_ok:
-                flash(f"User '{username}' created successfully ({role.title()} role). Welcome notification email with temporary credentials was dispatched to {email}.", "success")
+                flash(f"User '{username}' created successfully ({role_label_filter(role)} role). Welcome notification email with temporary credentials was dispatched to {email}.", "success")
             else:
                 flash(f"User '{username}' created successfully with temporary password '{password}', but email could not be delivered: {send_msg}. Please provide the credentials to the operator manually.", "warning")
         else:
@@ -915,6 +1030,11 @@ def admin_reset_password(user_id: int):
         update_user_password(user_id, temp_password, must_change_password=True)
         admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
         email = (user.get("email") or "").strip()
+        resolve_password_reset_requests(
+            username=user["username"],
+            email=email,
+            resolved_by=admin_user,
+        )
         email_info = f", Email: {email}" if email else ", Email: none"
         log_audit_event(
             admin_user,
@@ -987,7 +1107,7 @@ def change_user_role(user_id: int):
         update_user_role(user_id, new_role)
         admin_user = g.current_user.get("username", "admin") if getattr(g, "current_user", None) else "admin"
         log_audit_event(admin_user, "update_role", f"User #{user_id}", f"Role changed to {new_role}")
-        flash(f"User role updated to '{new_role.title()}'.", "success")
+        flash(f"User role updated to '{role_label_filter(new_role)}'.", "success")
     except Exception as exc:
         flash(f"Error updating role: {exc}", "error")
 
@@ -1015,19 +1135,19 @@ def remove_user(user_id: int):
 @app.route("/")
 @login_required
 def index():
-    user_role = g.current_user.get("role") if getattr(g, "current_user", None) else "viewer"
-    if user_role in ("admin", "analyst"):
-        rule = request.args.get("rule", "").strip() or None
-        severity = request.args.get("severity", "").strip() or None
-        src_ip = request.args.get("src_ip", "").strip() or None
-        status = request.args.get("status", "").strip() or None
-        client_name = request.args.get("client_name", "").strip() or None
-        search = request.args.get("search", "").strip() or None
-    else:
-        rule = severity = src_ip = status = client_name = search = None
+    rule = request.args.get("rule", "").strip() or None
+    severity = request.args.get("severity", "").strip() or None
+    src_ip = request.args.get("src_ip", "").strip() or None
+    status = request.args.get("status", "").strip() or None
+    client_name = request.args.get("client_name", "").strip() or None
+    search = request.args.get("search", "").strip() or None
+    flagged_param = request.args.get("flagged", "").strip()
+    flagged = True if flagged_param == "1" else None
 
     stats = get_summary_stats()
     chart_data = get_chart_data()
+    # By default, the main dashboard shows active incidents only (Resolved / False Positive live in /archive)
+    archived_filter = None if status in ("resolved", "false_positive") else False
     alerts = get_alerts(
         rule=rule,
         severity=severity,
@@ -1035,6 +1155,8 @@ def index():
         status=status,
         client_name=client_name,
         search=search,
+        flagged=flagged,
+        archived=archived_filter,
         limit=500,
     )
 
@@ -1045,6 +1167,7 @@ def index():
         "status": status or "",
         "client_name": client_name or "",
         "search": search or "",
+        "flagged": flagged_param if flagged_param == "1" else "",
     }
     return render_template(
         "index.html",
@@ -1052,6 +1175,48 @@ def index():
         alerts=alerts,
         filters=filters,
         chart_data=chart_data,
+    )
+
+
+@app.route("/archive")
+@login_required
+def archive_view():
+    rule = request.args.get("rule", "").strip() or None
+    severity = request.args.get("severity", "").strip() or None
+    src_ip = request.args.get("src_ip", "").strip() or None
+    status = request.args.get("status", "").strip() or None
+    if status not in ("resolved", "false_positive"):
+        status = None
+    client_name = request.args.get("client_name", "").strip() or None
+    search = request.args.get("search", "").strip() or None
+
+    alerts = get_alerts(
+        rule=rule,
+        severity=severity,
+        src_ip=src_ip,
+        status=status,
+        client_name=client_name,
+        search=search,
+        archived=True,
+        limit=500,
+    )
+    resolved_count = sum(1 for a in alerts if a.get("status") == "resolved")
+    fp_count = sum(1 for a in alerts if a.get("status") == "false_positive")
+
+    filters = {
+        "rule": rule or "",
+        "severity": severity or "",
+        "src_ip": src_ip or "",
+        "status": status or "",
+        "client_name": client_name or "",
+        "search": search or "",
+    }
+    return render_template(
+        "archive.html",
+        alerts=alerts,
+        resolved_count=resolved_count,
+        fp_count=fp_count,
+        filters=filters,
     )
 
 
@@ -1121,9 +1286,26 @@ def alert_detail(alert_id: int):
         except Exception as e:
             app.logger.warning(f"Could not parse evidence PCAP {evidence_path}: {e}")
 
+    if getattr(g, "current_user", None):
+        try:
+            mark_alert_messages_read(alert_id, g.current_user.get("username", ""))
+        except Exception:
+            pass
+
+    comments = get_alert_comments(alert_id)
+    try:
+        mention_users = [
+            {"username": u["username"], "role": u["role"]}
+            for u in get_all_users()
+            if u.get("username")
+        ]
+    except Exception:
+        mention_users = []
     return render_template(
         "alert.html",
         alert=alert,
+        comments=comments,
+        mention_users=mention_users,
         evidence_packets=evidence_packets,
         evidence_hash=evidence_hash,
         evidence_status=evidence_status,
@@ -1137,11 +1319,21 @@ def update_alert_status(alert_id: int):
     if not alert:
         abort(404, description=f"Alert #{alert_id} not found")
 
+    old_status = (alert.get("status") or "new").lower()
+    if old_status in ("resolved", "false_positive"):
+        flash(
+            f"Alert #{alert_id} is archived ({old_status.replace('_', ' ').title()}) and locked. Status and notes cannot be modified.",
+            "error",
+        )
+        return redirect(url_for("alert_detail", alert_id=alert_id))
+
     new_status = request.form.get("status", "new").strip().lower()
     analyst_note = request.form.get("analyst_note", "").strip()
     from src.db import update_alert_status_and_note
 
     update_alert_status_and_note(alert_id, new_status, analyst_note)
+    if new_status in ("resolved", "false_positive") and alert.get("flagged_for_review"):
+        clear_alert_flag(alert_id)
     operator = g.current_user.get("username", "analyst") if getattr(g, "current_user", None) else "analyst"
     log_audit_event(
         operator,
@@ -1149,11 +1341,117 @@ def update_alert_status(alert_id: int):
         f"Alert #{alert_id} ({alert.get('rule')})",
         f"Status: {new_status}. Note: {analyst_note[:100]}",
     )
+    status_label = new_status.replace("_", " ").title()
+    if new_status in ("resolved", "false_positive"):
+        flash(
+            f"Alert #{alert_id} marked as '{status_label}' and moved to Archive (locked read-only).",
+            "success",
+        )
+    else:
+        flash(
+            f"Alert #{alert_id} updated: status is now '{status_label}'.",
+            "success",
+        )
+    return redirect(url_for("alert_detail", alert_id=alert_id))
+
+
+@app.route("/alert/<int:alert_id>/flag", methods=["POST"])
+@role_required("viewer", "admin")
+def flag_alert_review(alert_id: int):
+    alert = get_alert_by_id(alert_id)
+    if not alert:
+        abort(404, description=f"Alert #{alert_id} not found")
+    if (alert.get("status") or "").lower() in ("resolved", "false_positive"):
+        flash(f"Alert #{alert_id} is archived and locked. Escalation flags are disabled.", "error")
+        return redirect(url_for("alert_detail", alert_id=alert_id))
+
+    reason = (request.form.get("flag_reason") or "").strip()
+    note = (request.form.get("flag_note") or "").strip()
+    if not reason:
+        flash("Please select a reason before flagging this alert for review.", "error")
+        return redirect(url_for("alert_detail", alert_id=alert_id))
+
+    operator = g.current_user.get("username", "viewer") if getattr(g, "current_user", None) else "viewer"
+    op_role = g.current_user.get("role", "viewer") if getattr(g, "current_user", None) else "viewer"
+    flag_alert_for_review(alert_id, flagged_by=operator, reason=reason, note=note)
+    thread_msg = f"[Flagged: {reason}]" + (f" {note}" if note else "")
+    add_alert_comment(alert_id, username=operator, role=op_role, message=thread_msg)
+    log_audit_event(
+        operator,
+        "flag_alert",
+        f"Alert #{alert_id} ({alert.get('rule')})",
+        f"Reason: {reason[:120]}" + (f" | Note: {note[:150]}" if note else ""),
+    )
     flash(
-        f"Alert #{alert_id} updated: status is now '{new_status.replace('_', ' ').title()}'.",
+        f"Alert #{alert_id} has been flagged for Security Analyst review ({reason}).",
         "success",
     )
     return redirect(url_for("alert_detail", alert_id=alert_id))
+
+
+@app.route("/alert/<int:alert_id>/clear-flag", methods=["POST"])
+@role_required("analyst", "admin")
+def clear_alert_review_flag(alert_id: int):
+    alert = get_alert_by_id(alert_id)
+    if not alert:
+        abort(404, description=f"Alert #{alert_id} not found")
+    if (alert.get("status") or "").lower() in ("resolved", "false_positive"):
+        flash(f"Alert #{alert_id} is archived and locked.", "error")
+        return redirect(url_for("alert_detail", alert_id=alert_id))
+
+    clear_alert_flag(alert_id)
+    operator = g.current_user.get("username", "analyst") if getattr(g, "current_user", None) else "analyst"
+    op_role = g.current_user.get("role", "analyst") if getattr(g, "current_user", None) else "analyst"
+    add_alert_comment(alert_id, username=operator, role=op_role, message="[Flag Reviewed] Escalation reviewed and cleared.")
+    log_audit_event(
+        operator,
+        "clear_alert_flag",
+        f"Alert #{alert_id} ({alert.get('rule')})",
+        "Security Monitor escalation flag reviewed and cleared",
+    )
+    flash(f"Security Monitor review flag cleared on Alert #{alert_id}.", "success")
+    return redirect(url_for("alert_detail", alert_id=alert_id))
+
+
+@app.route("/alert/<int:alert_id>/comment", methods=["POST"])
+@login_required
+def add_alert_thread_comment(alert_id: int):
+    alert = get_alert_by_id(alert_id)
+    if not alert:
+        abort(404, description=f"Alert #{alert_id} not found")
+    if (alert.get("status") or "").lower() in ("resolved", "false_positive"):
+        flash(f"Alert #{alert_id} is archived. SOC Chat is read-only for archived incidents.", "error")
+        return redirect(url_for("alert_detail", alert_id=alert_id) + "#soc-thread")
+
+    message = (request.form.get("message") or "").strip()
+    if not message:
+        flash("Message cannot be empty.", "error")
+        return redirect(url_for("alert_detail", alert_id=alert_id) + "#soc-thread")
+    if len(message) > 1000:
+        flash("Message is too long (maximum 1000 characters).", "error")
+        return redirect(url_for("alert_detail", alert_id=alert_id) + "#soc-thread")
+
+    operator = g.current_user.get("username", "operator") if getattr(g, "current_user", None) else "operator"
+    op_role = g.current_user.get("role", "viewer") if getattr(g, "current_user", None) else "viewer"
+    add_alert_comment(alert_id, username=operator, role=op_role, message=message)
+    log_audit_event(
+        operator,
+        "alert_comment",
+        f"Alert #{alert_id} ({alert.get('rule')})",
+        f"[{op_role.upper()}] {message[:150]}",
+    )
+    flash("Message posted to the SOC communication thread.", "success")
+    return redirect(url_for("alert_detail", alert_id=alert_id) + "#soc-thread")
+
+
+@app.route("/notifications/mark-read", methods=["POST"])
+@login_required
+def mark_notifications_read():
+    user = getattr(g, "current_user", None)
+    if user:
+        mark_all_messages_read(user.get("username", ""), user.get("role", "viewer"))
+    raw_next = request.form.get("next") or request.referrer
+    return redirect(_resolve_post_login_next(raw_next))
 
 
 @app.route("/upload", methods=["POST"])

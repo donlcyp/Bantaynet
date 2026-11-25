@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Archived Incidents - BantayNet{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.25rem;">
+  <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm" style="margin-bottom: 0.75rem;">
+    &larr; Back to Active Dashboard
+  </a>
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1 style="font-size: 1.5rem; font-weight: 700; color: var(--text-main);">
+        Incident <span style="color: var(--accent-blue);">Archive</span>
+      </h1>
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.2rem;">
+        Closed alerts marked as <strong>Resolved</strong> or <strong>False Positive</strong>. Archived incidents are locked read-only (view details and download Incident PDF or Evidence PCAP).
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Archive Summary Cards -->
+<div class="stats-grid" style="margin-bottom: 1.25rem;">
+  <div class="stat-card total">
+    <div class="stat-label">Total Archived</div>
+    <div class="stat-value">{{ alerts|length }}</div>
+  </div>
+  <div class="stat-card" style="border-top: 3px solid var(--accent-emerald);">
+    <div class="stat-label" style="color: var(--accent-success);">Resolved (Mitigated)</div>
+    <div class="stat-value">{{ resolved_count }}</div>
+  </div>
+  <div class="stat-card" style="border-top: 3px solid var(--text-dim);">
+    <div class="stat-label">False Positive</div>
+    <div class="stat-value">{{ fp_count }}</div>
+  </div>
+</div>
+
+<!-- Archive Filters (Collapsible) -->
+{% set active_arch_filters = (1 if filters.status else 0) + (1 if filters.rule else 0) + (1 if filters.severity else 0) + (1 if filters.search else 0) %}
+<div class="panel" id="archiveFilterPanel" data-active-filters="{{ active_arch_filters }}">
+  <div class="panel-title" style="margin-bottom: 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+      <span style="display: flex; align-items: center; gap: 0.45rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-blue);">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+        </svg>
+        Filter Archived Incidents
+      </span>
+      {% if active_arch_filters > 0 %}
+      <span class="badge badge-status-new" style="font-size: 0.7rem;">
+        {{ active_arch_filters }} Active Filter{{ 's' if active_arch_filters > 1 else '' }}
+      </span>
+      {% endif %}
+      <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
+        Showing {{ alerts|length }} archived incident(s)
+      </span>
+    </div>
+
+    <button type="button" id="archiveFilterToggleBtn" class="btn btn-secondary btn-sm" onclick="toggleArchiveFilterPanel()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+      <svg id="archiveFilterChevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.2s ease;">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+      <span id="archiveFilterToggleLabel">Hide Filters</span>
+    </button>
+  </div>
+
+  <div id="archiveFilterCollapseBody" style="margin-top: 1.1rem; transition: all 0.25s ease;">
+    <form method="GET" action="{{ url_for('archive_view') }}" class="filter-form">
+      <div class="form-group">
+        <label for="arch_status">Archive Status</label>
+        <select name="status" id="arch_status" class="form-control">
+          <option value="">All Archived</option>
+          <option value="resolved" {% if filters.status == 'resolved' %}selected{% endif %}>Resolved</option>
+          <option value="false_positive" {% if filters.status == 'false_positive' %}selected{% endif %}>False Positive</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="arch_rule">Rule Type</label>
+        <select name="rule" id="arch_rule" class="form-control">
+          <option value="">All Rules</option>
+          <option value="port_scan" {% if filters.rule == 'port_scan' %}selected{% endif %}>Port Scan</option>
+          <option value="slow_scan" {% if filters.rule == 'slow_scan' %}selected{% endif %}>Slow Scan</option>
+          <option value="host_sweep" {% if filters.rule == 'host_sweep' %}selected{% endif %}>Host Sweep</option>
+          <option value="syn_burst" {% if filters.rule == 'syn_burst' %}selected{% endif %}>SYN Burst</option>
+          <option value="suspicious_flags" {% if filters.rule == 'suspicious_flags' %}selected{% endif %}>Suspicious Flags</option>
+          <option value="cleartext" {% if filters.rule == 'cleartext' %}selected{% endif %}>Cleartext Protocols</option>
+          <option value="icmp_flood" {% if filters.rule == 'icmp_flood' %}selected{% endif %}>ICMP Flood</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="arch_severity">Severity</label>
+        <select name="severity" id="arch_severity" class="form-control">
+          <option value="">All Severities</option>
+          <option value="high" {% if filters.severity == 'high' %}selected{% endif %}>High</option>
+          <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
+          <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="arch_search">Keywords / Ports / IPs</label>
+        <input type="text" name="search" id="arch_search" class="form-control" placeholder="Search port, IP, notes..." value="{{ filters.search }}">
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="height: 38px;">Filter</button>
+      <a href="{{ url_for('archive_view') }}" class="btn btn-secondary" style="height: 38px;">Reset</a>
+    </form>
+  </div>
+</div>
+
+<script>
+  function setArchiveFilterPanelHidden(hidden) {
+    const body = document.getElementById('archiveFilterCollapseBody');
+    const label = document.getElementById('archiveFilterToggleLabel');
+    const icon = document.getElementById('archiveFilterChevron');
+    if (!body) return;
+    if (hidden) {
+      body.style.display = 'none';
+      if (label) label.textContent = 'Show Filters';
+      if (icon) icon.style.transform = 'rotate(-90deg)';
+    } else {
+      body.style.display = 'block';
+      if (label) label.textContent = 'Hide Filters';
+      if (icon) icon.style.transform = 'rotate(0deg)';
+    }
+  }
+
+  function toggleArchiveFilterPanel() {
+    const body = document.getElementById('archiveFilterCollapseBody');
+    if (!body) return;
+    const willHide = body.style.display !== 'none';
+    setArchiveFilterPanelHidden(willHide);
+    localStorage.setItem('bantaynet_archive_filters_hidden', willHide ? 'true' : 'false');
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const panel = document.getElementById('archiveFilterPanel');
+    const activeFilters = panel ? parseInt(panel.dataset.activeFilters || '0', 10) : 0;
+    const savedHidden = localStorage.getItem('bantaynet_archive_filters_hidden') === 'true';
+    if (savedHidden && activeFilters === 0) {
+      setArchiveFilterPanelHidden(true);
+    }
+  });
+</script>
+
+<!-- Archived Alerts Table -->
+<div class="panel" style="padding: 0; overflow: hidden;">
+  <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <h2 style="font-size: 1rem; font-weight: 600;">Archived Records ({{ alerts|length }})</h2>
+  </div>
+
+  {% if alerts %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Client / Site</th>
+          <th>Severity</th>
+          <th>Rule &amp; ATT&amp;CK</th>
+          <th>Source IP</th>
+          <th>Target Port</th>
+          <th>Analyst Notes</th>
+          <th>Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in alerts %}
+        <tr>
+          <td style="color: var(--text-dim); font-weight: 600;">#{{ a.id }}</td>
+          <td>
+            <span class="badge badge-status-{{ a.status }}">{{ a.status|replace('_', ' ')|title }}</span>
+          </td>
+          <td style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 600;">{{ a.client_name or 'Default' }}</td>
+          <td><span class="badge badge-{{ a.severity }}">{{ a.severity }}</span></td>
+          <td>
+            <span class="code-badge">{{ a.rule }}</span>
+            {% if a.mitre_id and a.mitre_id != 'N/A' %}
+              <span class="mitre-tag">{{ a.mitre_id }}</span>
+            {% endif %}
+          </td>
+          <td class="ip-text ip-source">{{ a.src_ip }}</td>
+          <td><span class="code-badge">{{ a.dst_port or '-' }}</span></td>
+          <td style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);" title="{{ a.analyst_note }}">
+            {{ a.analyst_note or '-' }}
+          </td>
+          <td style="font-size: 0.78rem; color: var(--text-dim); white-space: nowrap;">
+            {{ (a.updated_at|string)[:19]|replace('T', ' ') if a.updated_at else '-' }}
+          </td>
+          <td>
+            <a href="{{ url_for('alert_detail', alert_id=a.id) }}" class="btn btn-secondary btn-sm">Inspect</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No Archived Incidents</h3>
+    <p>Alerts marked as <strong>Resolved</strong> or <strong>False Positive</strong> by a Security Analyst will appear here automatically.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

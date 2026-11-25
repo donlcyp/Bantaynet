@@ -10,7 +10,7 @@
   <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
     <div>
       <h1 style="font-size: 1.5rem; font-weight: 700;">
-        Database &amp; <span style="color: #38bdf8;">Evidence Management</span>
+        Database &amp; <span style="color: var(--accent-blue);">Evidence Management</span>
       </h1>
       <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
         IT Administrator storage console to manage the alert database, forensic evidence snippets, and uploaded PCAP files.
@@ -36,7 +36,7 @@
   </div>
 
   <div class="panel" style="border-color: rgba(239, 68, 68, 0.35);">
-    <div class="panel-title" style="color: #f87171;">Database Maintenance Actions</div>
+    <div class="panel-title" style="color: var(--accent-danger);">Database Maintenance Actions</div>
     <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 1rem;">
       Clearing the alert database permanently removes all stored alert records. You may optionally purge associated forensic evidence <code>.pcap</code> snippets at the same time.
     </p>
@@ -46,7 +46,7 @@
         <input type="checkbox" name="purge_evidence">
         <span>Also delete all stored evidence PCAP snippets from disk</span>
       </label>
-      <button type="submit" class="btn btn-secondary" style="color: #f87171; border-color: rgba(239, 68, 68, 0.45);">
+      <button type="submit" class="btn btn-danger">
         Clear Alert Database
       </button>
     </form>
@@ -65,7 +65,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="category" value="evidence">
       <input type="hidden" name="purge_all" value="1">
-      <button type="submit" class="btn btn-secondary" style="font-size: 0.78rem; color: #f87171; border-color: rgba(239, 68, 68, 0.35);">
+      <button type="submit" class="btn btn-danger btn-sm">
         Purge All Evidence Files
       </button>
     </form>
@@ -94,7 +94,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="category" value="evidence">
               <input type="hidden" name="filename" value="{{ f.name }}">
-              <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+              <button type="submit" class="btn btn-danger" style="font-size: 0.75rem; padding: 0.25rem 0.55rem;">
                 Delete
               </button>
             </form>
@@ -152,7 +152,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="category" value="uploads">
               <input type="hidden" name="filename" value="{{ f.name }}">
-              <button type="submit" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+              <button type="submit" class="btn btn-danger" style="font-size: 0.75rem; padding: 0.25rem 0.55rem;">
                 Delete
               </button>
             </form>

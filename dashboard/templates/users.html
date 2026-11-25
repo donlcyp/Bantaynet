@@ -13,7 +13,7 @@
         User & Role <span style="color: #38bdf8;">Administration</span>
       </h1>
       <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
-        Manage SOC operator accounts and granular role permissions (Admin, Analyst, Viewer).
+        Manage SOC operator accounts and granular role permissions (Admin, Analyst, Security Monitor).
       </p>
     </div>
   </div>
@@ -125,7 +125,7 @@
       <div style="margin-bottom: 1.5rem;">
         <label for="new_role" style="display: block; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.35rem;">Security Role</label>
         <select id="new_role" name="role" class="form-control" style="width: 100%;">
-          <option value="viewer">Viewer (Dashboard summary &amp; read-only alert details)</option>
+          <option value="viewer">Security Monitor / Tier 1 (Monitor, filter flagged ports &amp; escalate to Analyst)</option>
           <option value="analyst">Security Analyst (Upload PCAPs, investigate evidence &amp; export CSV)</option>
           <option value="admin">IT Administrator (Configure rules, manage DB/evidence &amp; full access)</option>
         </select>
@@ -140,23 +140,23 @@
     <div class="panel-title">Role Permission Matrix</div>
     <div style="margin-top: 0.75rem; font-size: 0.85rem; line-height: 1.6;">
       <div style="padding: 0.75rem; margin-bottom: 0.6rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px;">
-        <strong style="color: #38bdf8;">IT Administrator (Admin):</strong>
+        <strong style="color: var(--accent-blue);">IT Administrator (Admin):</strong>
         <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
           Configure detection thresholds and rules, manage the database and stored evidence files, manage operator accounts/audit logs, and view all alerts, evidence, and reports.
         </p>
       </div>
 
       <div style="padding: 0.75rem; margin-bottom: 0.6rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px;">
-        <strong style="color: #34d399;">Security Analyst (Analyst):</strong>
+        <strong style="color: var(--accent-success);">Security Analyst (Analyst):</strong>
         <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
           Upload and analyze PCAP files, investigate alerts using the evidence packets, and filter alert history and export CSV reports.
         </p>
       </div>
 
-      <div style="padding: 0.75rem; background: rgba(167, 139, 250, 0.08); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 6px;">
-        <strong style="color: #a78bfa;">Viewer (Team Lead / Auditor):</strong>
+      <div style="padding: 0.75rem; background: var(--flagged-bg); border: 1px solid var(--flagged-border); border-radius: 6px;">
+        <strong style="color: var(--accent-purple);">Security Monitor (Tier 1):</strong>
         <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">
-          View the dashboard summary and read-only alert details.
+          Monitor dashboard alerts, search and filter flagged ports or IPs, and flag suspicious or missed incidents for Security Analyst review (read-only triage).
         </p>
       </div>
     </div>
@@ -206,7 +206,7 @@
             {% elif u.role == 'analyst' %}
               <span class="badge badge-role-analyst">Analyst</span>
             {% else %}
-              <span class="badge badge-role-viewer">Viewer</span>
+              <span class="badge badge-role-viewer">Security Monitor</span>
             {% endif %}
           </td>
           <td>
@@ -225,7 +225,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <label for="role-select-{{ u.id }}" class="visually-hidden">Role for {{ u.username }}</label>
                 <select id="role-select-{{ u.id }}" name="role" class="form-control" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; height: 30px;" aria-label="Role for {{ u.username }}">
-                  <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                  <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Security Monitor</option>
                   <option value="analyst" {% if u.role == 'analyst' %}selected{% endif %}>Analyst</option>
                   <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
                 </select>
@@ -238,13 +238,13 @@
               {% if not u.is_virtual %}
                 <form method="POST" action="{{ url_for('admin_reset_password', user_id=u.id) }}" onsubmit="return confirm('Reset password for \'{{ u.username }}\' and send a temporary password via email?');">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; height: 30px; color: #f59e0b; border-color: rgba(245,158,11,0.35);" title="Generate temporary password and email user">
+                  <button type="submit" class="btn btn-warning" style="font-size: 0.72rem; padding: 0.25rem 0.55rem; height: 30px;" title="Generate temporary password and email user">
                     Reset Password
                   </button>
                 </form>
                 <form method="POST" action="{{ url_for('admin_toggle_2fa', user_id=u.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; height: 30px;" title="Toggle Two-Factor Authentication">
+                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.55rem; height: 30px;" title="Toggle Two-Factor Authentication">
                     {{ 'Disable 2FA' if u.is_2fa_enabled else 'Enable 2FA' }}
                   </button>
                 </form>
@@ -254,7 +254,7 @@
               {% else %}
                 <form method="POST" action="{{ url_for('remove_user', user_id=u.id) }}" onsubmit="return confirm('Delete operator account \'{{ u.username }}\'?');">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="btn btn-secondary" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; height: 30px; color: #f87171; border-color: rgba(239,68,68,0.3);">
+                  <button type="submit" class="btn btn-danger" style="font-size: 0.72rem; padding: 0.25rem 0.55rem; height: 30px;">
                     Delete
                   </button>
                 </form>

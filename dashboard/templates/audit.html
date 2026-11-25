@@ -10,7 +10,7 @@
   <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
     <div>
       <h1 style="font-size: 1.5rem; font-weight: 700;">
-        System & Operator <span style="color: #38bdf8;">Audit Log</span>
+        System & Operator <span style="color: var(--accent-blue);">Audit Log</span>
       </h1>
       <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
         Chronological audit trail of operator logins, PCAP uploads, triage determinations, and administration events.
@@ -59,6 +59,9 @@
           <option value="logout" {% if filter_action == 'logout' %}selected{% endif %}>User Logout</option>
           <option value="upload_pcap" {% if filter_action == 'upload_pcap' %}selected{% endif %}>PCAP Upload &amp; Analysis</option>
           <option value="update_alert" {% if filter_action == 'update_alert' %}selected{% endif %}>Alert Triage Update</option>
+          <option value="flag_alert" {% if filter_action == 'flag_alert' %}selected{% endif %}>Alert Flagged by Security Monitor</option>
+          <option value="clear_alert_flag" {% if filter_action == 'clear_alert_flag' %}selected{% endif %}>Security Monitor Flag Cleared</option>
+          <option value="alert_comment" {% if filter_action == 'alert_comment' %}selected{% endif %}>SOC Thread Message</option>
           <option value="update_rules" {% if filter_action == 'update_rules' %}selected{% endif %}>Rules &amp; Thresholds Updated</option>
           <option value="clear_database" {% if filter_action == 'clear_database' %}selected{% endif %}>Database Cleared</option>
           <option value="delete_alert" {% if filter_action == 'delete_alert' %}selected{% endif %}>Alert Deleted</option>
@@ -68,6 +71,7 @@
           <option value="export_summary_pdf" {% if filter_action == 'export_summary_pdf' %}selected{% endif %}>Summary PDF Exported</option>
           <option value="create_user" {% if filter_action == 'create_user' %}selected{% endif %}>User Created</option>
           <option value="reset_password" {% if filter_action == 'reset_password' %}selected{% endif %}>Password Reset</option>
+          <option value="password_reset_request" {% if filter_action == 'password_reset_request' %}selected{% endif %}>Password Reset Requested</option>
           <option value="update_role" {% if filter_action == 'update_role' %}selected{% endif %}>Role Modified</option>
           <option value="delete_user" {% if filter_action == 'delete_user' %}selected{% endif %}>User Deleted</option>
         </select>

@@ -3,9 +3,10 @@
 {% block title %}Alert #{{ alert.id }} - {{ alert.rule }} - BantayNet{% endblock %}
 
 {% block content %}
+{% set is_archived = alert.status in ['resolved', 'false_positive'] %}
 <div style="margin-bottom: 1.5rem;">
-  <a href="{{ url_for('index') }}" class="btn btn-secondary" style="font-size: 0.8rem; margin-bottom: 1rem;">
-    &larr; Back to Dashboard
+  <a href="{{ url_for('archive_view') if is_archived else url_for('index') }}" class="btn btn-secondary" style="font-size: 0.8rem; margin-bottom: 1rem;">
+    &larr; {{ 'Back to Archive' if is_archived else 'Back to Dashboard' }}
   </a>
   <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
     <div>
@@ -51,7 +52,7 @@
       {% if current_user.role == 'admin' %}
       <form method="POST" action="{{ url_for('admin_delete_alert', alert_id=alert.id) }}" onsubmit="return confirm('Delete Alert #{{ alert.id }} from the database?');" style="display: inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn-secondary" style="color: #f87171; border-color: rgba(239, 68, 68, 0.4);">
+        <button type="submit" class="btn btn-danger">
           Delete Alert
         </button>
       </form>
@@ -61,114 +62,122 @@
   </div>
 </div>
 
-<!-- Security Analyst Triage & Status Panel -->
-<div class="panel triage-panel">
-  <div class="triage-header">
-    <div class="triage-title-group">
-      <div class="triage-icon-wrap">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 11l3 3L22 4"></path>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-        </svg>
-      </div>
-      <div>
-        <div style="display: flex; align-items: center;">
-          <span class="triage-title">Analyst Incident Triage</span>
-          <span class="triage-badge">SOC Action Desk</span>
-        </div>
-        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem;">
-          Review alert evidence, update containment status, and record root-cause investigation notes.
-        </div>
-      </div>
-    </div>
-    <div class="triage-timestamp">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);">
-        <circle cx="12" cy="12" r="10"></circle>
-        <polyline points="12 6 12 12 16 14"></polyline>
-      </svg>
-      <span>Last Triaged:</span>
-      <strong>
-        {% if alert.updated_at %}
-          {{ (alert.updated_at|string)[:19]|replace('T', ' ') }} UTC
-        {% else %}
-          <em>Unreviewed (Initial Detection)</em>
-        {% endif %}
-      </strong>
-    </div>
+<!-- Alert Flagged Banner (if escalated by Viewer) -->
+{% if alert.flagged_for_review %}
+<div class="escalation-banner" style="margin-bottom: 1rem;">
+  <div style="display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap;">
+    <span class="badge badge-flagged">&#9873; Flagged for Review</span>
+    <strong style="color: var(--text-main); font-size: 0.84rem;">{{ alert.flag_reason }}</strong>
+    <span style="font-size: 0.76rem; color: var(--text-muted);">
+      by <strong style="color: var(--accent-purple);">{{ alert.flagged_by or 'viewer' }}</strong>{% if alert.flagged_at %} &middot; {{ (alert.flagged_at|string)[:19]|replace('T', ' ') }} UTC{% endif %}
+    </span>
   </div>
-
-  {% if current_user and current_user.role == 'analyst' %}
-  <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" class="triage-form">
+  {% if current_user and current_user.role in ['analyst', 'admin'] %}
+  <form action="{{ url_for('clear_alert_review_flag', alert_id=alert.id) }}" method="POST" style="flex-shrink: 0;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="triage-grid">
-      <!-- Status column -->
-      <div class="triage-col-status">
-        <label for="statusSelect" class="triage-label">Incident Status</label>
-        <select name="status" id="statusSelect" class="triage-select">
-          <option value="new" {% if alert.status == 'new' %}selected{% endif %}>🔵 New Incident</option>
-          <option value="investigating" {% if alert.status == 'investigating' %}selected{% endif %}>🟡 Under Investigation</option>
-          <option value="resolved" {% if alert.status == 'resolved' %}selected{% endif %}>🟢 Resolved (Threat Mitigated)</option>
-          <option value="false_positive" {% if alert.status == 'false_positive' %}selected{% endif %}>⚪ False Positive (Dismissed)</option>
-        </select>
-        <div class="triage-status-hint">
-          <span>Active State:</span>
-          <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
-        </div>
-      </div>
-
-      <!-- Notes column -->
-      <div class="triage-col-notes">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.45rem;">
-          <label for="analystNote" class="triage-label" style="margin-bottom: 0;">Analyst Notes &amp; Root-Cause Findings</label>
-          <span style="font-size: 0.72rem; color: var(--text-dim);">Root cause, IOCs, containment steps, or client comms</span>
-        </div>
-        <textarea name="analyst_note" id="analystNote" class="triage-textarea" rows="3" placeholder="Document root-cause, investigation notes, false-positive justification, or client communication...">{{ alert.analyst_note or '' }}</textarea>
-      </div>
-    </div>
-
-    <div class="triage-footer">
-      <div class="triage-footer-info">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
-        <span>Changes are logged with your user identity in the tamper-evident audit log.</span>
-      </div>
-      <button type="submit" class="btn btn-primary triage-submit-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-          <polyline points="17 21 17 13 7 13 7 21"></polyline>
-          <polyline points="7 3 7 8 15 8"></polyline>
-        </svg>
-        <span>Save Triage Notes</span>
-      </button>
-    </div>
+    <button type="submit" class="btn btn-purple-outline btn-sm" style="padding: 0.25rem 0.65rem; font-size: 0.74rem;">
+      &#10003; Mark Reviewed
+    </button>
   </form>
-  {% else %}
-  <div class="triage-readonly">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
-      <div style="display: flex; align-items: center; gap: 0.6rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">Current Status:</span>
-        <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
-      </div>
-      <span style="font-size: 0.78rem; color: var(--text-dim); display: inline-flex; align-items: center; gap: 0.35rem;">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-        </svg>
-        Read-only view (Security Analyst role required to edit)
-      </span>
-    </div>
-    <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem;">
-      <div style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.35rem; font-weight: 600; letter-spacing: 0.5px;">Analyst Notes</div>
-      <div style="font-size: 0.88rem; color: var(--text-main); white-space: pre-wrap; line-height: 1.5;">{{ alert.analyst_note or 'No notes recorded.' }}</div>
-    </div>
-  </div>
   {% endif %}
 </div>
+{% endif %}
 
-<div class="detail-grid">
+<!-- 2-Column SOC Workbench Layout: Left = Triage + Incident/Rule Details, Right = Sticky SOC Chat -->
+<div class="alert-workbench-grid">
+  <!-- Left Column: Triage + Incident & Rule Details -->
+  <div class="alert-workbench-left">
+  <div class="panel triage-panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
+    <div class="triage-header" style="margin-bottom: 0.85rem; padding-bottom: 0.75rem;">
+      <div class="triage-title-group">
+        <div class="triage-icon-wrap" style="width: 34px; height: 34px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4"></path>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+          </svg>
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+            <span class="triage-title" style="font-size: 0.98rem;">Incident Triage</span>
+            <span class="triage-badge">SOC Desk</span>
+          </div>
+          <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.1rem;">
+            Last Triaged:
+            <strong>
+              {% if alert.updated_at %}
+                {{ (alert.updated_at|string)[:19]|replace('T', ' ') }} UTC
+              {% else %}
+                <em>Unreviewed</em>
+              {% endif %}
+            </strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if current_user and current_user.role == 'analyst' and not is_archived %}
+    <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" class="triage-form" style="display: flex; flex-direction: column; gap: 0.75rem; flex: 1;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div style="display: grid; grid-template-columns: minmax(190px, 240px) 1fr; gap: 0.85rem; align-items: start;">
+        <div>
+          <label for="statusSelect" class="triage-label">Incident Status</label>
+          <select name="status" id="statusSelect" class="triage-select">
+            <option value="new" {% if alert.status == 'new' %}selected{% endif %}>🔵 New Incident</option>
+            <option value="investigating" {% if alert.status == 'investigating' %}selected{% endif %}>🟡 Under Investigation</option>
+            <option value="resolved" {% if alert.status == 'resolved' %}selected{% endif %}>🟢 Resolved (Mitigated)</option>
+            <option value="false_positive" {% if alert.status == 'false_positive' %}selected{% endif %}>⚪ False Positive</option>
+          </select>
+          <div class="triage-status-hint" style="margin-top: 0.45rem;">
+            <span>Active:</span>
+            <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
+          </div>
+        </div>
+
+        <div>
+          <label for="analystNote" class="triage-label">Analyst Notes &amp; Root-Cause Findings</label>
+          <textarea name="analyst_note" id="analystNote" class="triage-textarea" rows="3" placeholder="Document root-cause, IOCs, containment steps...">{{ alert.analyst_note or '' }}</textarea>
+        </div>
+      </div>
+
+      <div class="triage-footer" style="margin-top: 0.25rem; padding-top: 0.65rem;">
+        <div class="triage-footer-info" style="font-size: 0.74rem;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>Logged in tamper-evident audit trail.</span>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">
+          <span>Save Triage Notes</span>
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <div class="triage-readonly" style="display: flex; flex-direction: column; gap: 0.65rem; flex: 1;">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">Status:</span>
+          <span class="badge badge-status-{{ alert.status }}">{{ alert.status|replace('_', ' ')|title }}</span>
+        </div>
+        <span style="font-size: 0.72rem; color: var(--text-dim); display: inline-flex; align-items: center; gap: 0.3rem;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          {% if is_archived %}Archived &mdash; Read-only view (status locked){% else %}Read-only view (Analyst role required to edit){% endif %}
+        </span>
+      </div>
+      <div style="background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.65rem 0.85rem; font-size: 0.84rem; color: var(--text-main); flex: 1;">
+        <div style="font-size: 0.68rem; text-transform: uppercase; color: var(--text-dim); font-weight: 700; letter-spacing: 0.04em; margin-bottom: 0.25rem;">Analyst Notes</div>
+        <div style="white-space: pre-wrap; line-height: 1.45;">{{ alert.analyst_note or 'No notes recorded.' }}</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Incident Metadata & Detection Rule Details (directly under Triage, zero empty gap) -->
+  <div class="detail-grid" style="margin-bottom: 0;">
   <!-- Incident Metadata -->
   <div class="panel">
     <div class="panel-title">Incident Information</div>
@@ -271,7 +280,7 @@
           <dt>{{ k|replace('_', ' ')|title }}</dt>
           <dd>
             {% if v is sequence and v is not string %}
-              <div style="max-height: 120px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;">
+              <div style="max-height: 120px; overflow-y: auto; background: var(--surface-subtle); border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;">
                 {{ v|join(', ') }}
               </div>
             {% else %}
@@ -306,10 +315,199 @@
       {% if alert.source_pcap_sha256 or (alert.details and alert.details.source_pcap_sha256) %}
       <dt>Master Capture SHA-256</dt>
       <dd>
-        <code style="font-size: 0.8rem; word-break: break-all; background: rgba(0,0,0,0.25); padding: 0.25rem 0.5rem; border-radius: 4px;">{{ alert.source_pcap_sha256 or alert.details.source_pcap_sha256 }}</code>
+        <code style="font-size: 0.8rem; word-break: break-all; background: var(--surface-subtle); border: 1px solid var(--border-color); padding: 0.25rem 0.5rem; border-radius: 4px;">{{ alert.source_pcap_sha256 or alert.details.source_pcap_sha256 }}</code>
       </dd>
       {% endif %}
     </dl>
+  </div>
+</div>
+  </div><!-- /.alert-workbench-left -->
+
+  <!-- Right Column: Sticky Two-Way SOC Communication Thread -->
+  <div id="soc-thread" class="panel soc-thread-panel">
+    <div class="soc-thread-header">
+      <div class="soc-thread-title">SOC Chat <span style="font-weight: 400; color: var(--text-muted); font-size: 0.76rem;">(Security Monitor &harr; Analyst)</span></div>
+      <span class="badge badge-rep-unknown">{{ comments|length }}</span>
+    </div>
+
+    {% if comments %}
+    <div id="socThreadList" class="soc-thread-list">
+      {% for c in comments %}
+      <div class="soc-msg soc-msg-{{ c.role }}">
+        <div class="soc-msg-meta">
+          <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <strong class="soc-msg-author">{{ c.username }}</strong>
+            <span class="badge badge-role-{{ c.role }}">{{ c.role|role_label }}</span>
+          </div>
+          <span class="soc-msg-time">{{ (c.created_at|string)[11:19] }} UTC</span>
+        </div>
+        <div class="soc-msg-body">{{ c.message | highlight_mentions }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <script>
+      (function() {
+        function scrollSocChatToLatest() {
+          var list = document.getElementById('socThreadList');
+          if (list) list.scrollTop = list.scrollHeight;
+        }
+        scrollSocChatToLatest();
+        document.addEventListener('DOMContentLoaded', scrollSocChatToLatest);
+        window.addEventListener('load', scrollSocChatToLatest);
+      })();
+    </script>
+    {% else %}
+    <div class="soc-thread-empty">
+      No messages yet. Coordinate with the {{ 'Security Analyst' if current_user and current_user.role == 'viewer' else 'Security Monitor / SOC team' }} below.
+    </div>
+    {% endif %}
+
+    {% if is_archived %}
+    <div class="soc-thread-empty" style="margin-bottom: 0; text-align: center; font-weight: 600;">
+      &#128274; Incident Archived &mdash; SOC Chat is locked (read-only).
+    </div>
+    {% elif current_user %}
+    <form id="socChatForm" action="{{ url_for('add_alert_thread_comment', alert_id=alert.id) }}" method="POST" autocomplete="off" class="soc-thread-form" style="position: relative;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div id="socMentionMenu" class="soc-mention-menu" style="display: none;" role="listbox"></div>
+      <textarea
+        id="socChatInput"
+        name="message"
+        rows="1"
+        class="form-control"
+        maxlength="1000"
+        autocomplete="off"
+        data-lpignore="true"
+        data-1p-ignore="true"
+        data-form-type="other"
+        required
+        style="flex: 1; height: 34px; min-height: 34px; max-height: 34px; resize: none; overflow: hidden; padding: 0.42rem 0.7rem; font-size: 0.82rem; line-height: 1.35;"
+        placeholder="{% if current_user.role == 'viewer' %}Message Analyst (type @ to mention)...{% else %}Reply to Security Monitor (type @ to mention)...{% endif %}"
+      ></textarea>
+      <button type="submit" class="btn btn-primary btn-sm" style="height: 34px; white-space: nowrap;">
+        {% if current_user.role == 'viewer' %}Send{% else %}Reply{% endif %}
+      </button>
+    </form>
+    <script id="socMentionUsersData" type="application/json">{{ mention_users | default([]) | tojson }}</script>
+    <script>
+      (function() {
+        const dataEl = document.getElementById('socMentionUsersData');
+        const USERS = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+        const input = document.getElementById('socChatInput');
+        const menu = document.getElementById('socMentionMenu');
+        if (!input || !menu || !USERS.length) return;
+
+        let activeIdx = 0;
+        let currentMatches = [];
+        let mentionStart = -1;
+
+        function closeMenu() {
+          menu.style.display = 'none';
+          menu.innerHTML = '';
+          currentMatches = [];
+          mentionStart = -1;
+        }
+
+        function insertMention(username) {
+          if (mentionStart < 0) return;
+          const val = input.value;
+          const cursor = input.selectionStart || val.length;
+          const before = val.slice(0, mentionStart);
+          const after = val.slice(cursor);
+          const inserted = '@' + username + ' ';
+          input.value = before + inserted + after;
+          const newPos = before.length + inserted.length;
+          input.focus();
+          input.setSelectionRange(newPos, newPos);
+          closeMenu();
+        }
+
+        function renderMenu() {
+          if (!currentMatches.length) {
+            closeMenu();
+            return;
+          }
+          menu.innerHTML = '';
+          currentMatches.forEach(function(u, idx) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'soc-mention-option' + (idx === activeIdx ? ' active' : '');
+            const roleLabel = u.role === 'viewer' ? 'Security Monitor' : (u.role === 'analyst' ? 'Analyst' : (u.role === 'admin' ? 'Admin' : u.role));
+            btn.innerHTML = '<span>@' + u.username + '</span><span class="badge badge-role-' + u.role + '" style="font-size: 0.62rem; padding: 0.08rem 0.38rem;">' + roleLabel + '</span>';
+            btn.addEventListener('mousedown', function(e) {
+              e.preventDefault();
+              insertMention(u.username);
+            });
+            menu.appendChild(btn);
+          });
+          menu.style.display = 'block';
+        }
+
+        input.addEventListener('input', function() {
+          const pos = input.selectionStart || 0;
+          const upToCursor = input.value.slice(0, pos);
+          const match = upToCursor.match(/(?:^|\s)@([A-Za-z0-9_.-]*)$/);
+          if (!match) {
+            closeMenu();
+            return;
+          }
+          const query = match[1].toLowerCase();
+          mentionStart = pos - match[1].length - 1;
+          currentMatches = USERS.filter(function(u) {
+            return u.username.toLowerCase().includes(query);
+          }).slice(0, 6);
+          activeIdx = 0;
+          renderMenu();
+        });
+
+        input.addEventListener('keydown', function(e) {
+          if (menu.style.display === 'block' && currentMatches.length) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              activeIdx = (activeIdx + 1) % currentMatches.length;
+              renderMenu();
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              activeIdx = (activeIdx - 1 + currentMatches.length) % currentMatches.length;
+              renderMenu();
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              insertMention(currentMatches[activeIdx].username);
+            } else if (e.key === 'Escape') {
+              closeMenu();
+            }
+            return;
+          }
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            const form = document.getElementById('socChatForm');
+            if (form && input.value.trim()) form.submit();
+          }
+        });
+
+        document.addEventListener('click', function(e) {
+          if (e.target !== input && !menu.contains(e.target)) closeMenu();
+        });
+      })();
+    </script>
+    {% endif %}
+
+    {% if current_user and current_user.role == 'viewer' and not is_archived %}
+    <form action="{{ url_for('flag_alert_review', alert_id=alert.id) }}" method="POST" class="viewer-flag-bar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select name="flag_reason" id="flagReason" class="form-control" style="flex: 1; min-width: 150px; height: 32px; font-size: 0.76rem;" required aria-label="Escalation Reason">
+        <option value="Suspicious / Flagged Port" {% if alert.flag_reason == 'Suspicious / Flagged Port' %}selected{% endif %}>Suspicious / Flagged Port</option>
+        <option value="Possible Missed Detection" {% if alert.flag_reason == 'Possible Missed Detection' %}selected{% endif %}>Possible Missed Detection</option>
+        <option value="Repeated Source IP" {% if alert.flag_reason == 'Repeated Source IP' %}selected{% endif %}>Repeated Source IP</option>
+        <option value="Needs Urgent Escalation" {% if alert.flag_reason == 'Needs Urgent Escalation' %}selected{% endif %}>Needs Urgent Escalation</option>
+        <option value="Other / Analyst Check Needed" {% if alert.flag_reason == 'Other / Analyst Check Needed' %}selected{% endif %}>Other / Analyst Check Needed</option>
+      </select>
+      <input type="text" name="flag_note" id="flagNote" class="form-control" maxlength="500" style="flex: 1; min-width: 120px; height: 32px; font-size: 0.76rem;" placeholder="Optional flag note...">
+      <button type="submit" class="btn btn-purple btn-sm" style="height: 32px; font-size: 0.75rem; white-space: nowrap;">
+        &#9873; {{ 'Update Flag' if alert.flagged_for_review else 'Flag Alert' }}
+      </button>
+    </form>
+    {% endif %}
   </div>
 </div>
 

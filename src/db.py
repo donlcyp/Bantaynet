@@ -240,18 +240,28 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                         updated_at VARCHAR(64),
                         client_name VARCHAR(128) DEFAULT 'Default',
                         reputation_score INT,
-                        reputation_note TEXT
+                        reputation_note TEXT,
+                        flagged_for_review INT DEFAULT 0,
+                        flag_reason VARCHAR(128),
+                        flag_note TEXT,
+                        flagged_by VARCHAR(64),
+                        flagged_at VARCHAR(64)
                     );
                     """
                 )
-                try:
-                    cur.execute("ALTER TABLE alerts ADD COLUMN reputation_score INT;")
-                except Exception:
-                    pass
-                try:
-                    cur.execute("ALTER TABLE alerts ADD COLUMN reputation_note TEXT;")
-                except Exception:
-                    pass
+                for pg_col_sql in [
+                    "ALTER TABLE alerts ADD COLUMN reputation_score INT;",
+                    "ALTER TABLE alerts ADD COLUMN reputation_note TEXT;",
+                    "ALTER TABLE alerts ADD COLUMN flagged_for_review INT DEFAULT 0;",
+                    "ALTER TABLE alerts ADD COLUMN flag_reason VARCHAR(128);",
+                    "ALTER TABLE alerts ADD COLUMN flag_note TEXT;",
+                    "ALTER TABLE alerts ADD COLUMN flagged_by VARCHAR(64);",
+                    "ALTER TABLE alerts ADD COLUMN flagged_at VARCHAR(64);",
+                ]:
+                    try:
+                        cur.execute(pg_col_sql)
+                    except Exception:
+                        pass
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_rule ON alerts(rule);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_src ON alerts(src_ip);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);")
@@ -306,6 +316,47 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_id_desc ON audit_logs(id DESC);")
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS alert_comments (
+                        id SERIAL PRIMARY KEY,
+                        alert_id INT NOT NULL,
+                        username VARCHAR(64) NOT NULL,
+                        role VARCHAR(32) NOT NULL DEFAULT 'viewer',
+                        message TEXT NOT NULL,
+                        created_at VARCHAR(64) NOT NULL
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_alert_comments_alert ON alert_comments(alert_id);")
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS notification_reads (
+                        id SERIAL PRIMARY KEY,
+                        username VARCHAR(64) NOT NULL,
+                        item_key VARCHAR(64) NOT NULL,
+                        read_at VARCHAR(64) NOT NULL,
+                        UNIQUE (username, item_key)
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_notif_reads_user ON notification_reads(username);")
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS password_reset_requests (
+                        id SERIAL PRIMARY KEY,
+                        identifier VARCHAR(128) NOT NULL,
+                        username VARCHAR(64),
+                        email VARCHAR(128),
+                        note TEXT,
+                        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                        created_at VARCHAR(64) NOT NULL,
+                        resolved_at VARCHAR(64),
+                        resolved_by VARCHAR(64)
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_pwd_reset_status ON password_reset_requests(status);")
             conn.close()
             _seed_default_users("mysql", conf)
             _INITIALIZED_TARGETS.add(target_key)
@@ -348,6 +399,11 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                     "client_name VARCHAR(128) DEFAULT 'Default'",
                     "reputation_score INT",
                     "reputation_note TEXT",
+                    "flagged_for_review INT DEFAULT 0",
+                    "flag_reason VARCHAR(128)",
+                    "flag_note TEXT",
+                    "flagged_by VARCHAR(64)",
+                    "flagged_at VARCHAR(64)",
                 ]:
                     try:
                         cur.execute(f"ALTER TABLE alerts ADD COLUMN {col_def};")
@@ -396,6 +452,47 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS alert_comments (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        alert_id INT NOT NULL,
+                        username VARCHAR(64) NOT NULL,
+                        role VARCHAR(32) NOT NULL DEFAULT 'viewer',
+                        message TEXT NOT NULL,
+                        created_at VARCHAR(64) NOT NULL,
+                        INDEX idx_alert_comments_alert (alert_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS notification_reads (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        username VARCHAR(64) NOT NULL,
+                        item_key VARCHAR(64) NOT NULL,
+                        read_at VARCHAR(64) NOT NULL,
+                        UNIQUE KEY uq_notif_user_item (username, item_key),
+                        INDEX idx_notif_reads_user (username)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS password_reset_requests (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        identifier VARCHAR(128) NOT NULL,
+                        username VARCHAR(64),
+                        email VARCHAR(128),
+                        note TEXT,
+                        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                        created_at VARCHAR(64) NOT NULL,
+                        resolved_at VARCHAR(64),
+                        resolved_by VARCHAR(64),
+                        INDEX idx_pwd_reset_status (status)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                    """
+                )
             conn.close()
             _seed_default_users("mysql", conf)
             _INITIALIZED_TARGETS.add(target_key)
@@ -427,7 +524,12 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
                 updated_at TEXT,
                 client_name TEXT DEFAULT 'Default',
                 reputation_score INTEGER,
-                reputation_note TEXT
+                reputation_note TEXT,
+                flagged_for_review INTEGER DEFAULT 0,
+                flag_reason TEXT,
+                flag_note TEXT,
+                flagged_by TEXT,
+                flagged_at TEXT
             );
             """
         )
@@ -440,6 +542,11 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
             ("client_name", "TEXT DEFAULT 'Default'"),
             ("reputation_score", "INTEGER"),
             ("reputation_note", "TEXT"),
+            ("flagged_for_review", "INTEGER DEFAULT 0"),
+            ("flag_reason", "TEXT"),
+            ("flag_note", "TEXT"),
+            ("flagged_by", "TEXT"),
+            ("flagged_at", "TEXT"),
         ]
         for col_name, col_type in migration_cols:
             if col_name not in existing_cols:
@@ -490,6 +597,47 @@ def init_db(db_path: Path | str | None = None, force: bool = False) -> str:
             );
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alert_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alert_id INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'viewer',
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_comments_alert ON alert_comments(alert_id);")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notification_reads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                item_key TEXT NOT NULL,
+                read_at TEXT NOT NULL,
+                UNIQUE (username, item_key)
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notif_reads_user ON notification_reads(username);")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                identifier TEXT NOT NULL,
+                username TEXT,
+                email TEXT,
+                note TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                resolved_at TEXT,
+                resolved_by TEXT
+            );
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pwd_reset_status ON password_reset_requests(status);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);")
@@ -1414,8 +1562,574 @@ def _format_alert_dict(row: Any) -> dict[str, Any]:
     d["source_pcap_sha256"] = d.get("source_pcap_sha256") or d["details"].get("source_pcap_sha256")
     d["reputation_score"] = d.get("reputation_score")
     d["reputation_note"] = d.get("reputation_note") or ""
+    d["flagged_for_review"] = bool(d.get("flagged_for_review"))
+    d["flag_reason"] = d.get("flag_reason") or ""
+    d["flag_note"] = d.get("flag_note") or ""
+    d["flagged_by"] = d.get("flagged_by") or ""
+    d["flagged_at"] = d.get("flagged_at") or ""
     attach_mitre_info(d)
     return d
+
+
+def flag_alert_for_review(
+    alert_id: int,
+    flagged_by: str,
+    reason: str,
+    note: str = "",
+    db_path: Path | str | None = None,
+) -> bool:
+    """Flag an alert for Security Analyst review (Tier 1 Viewer escalation)."""
+    invalidate_aggregate_cache()
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    reason_clean = (reason or "Needs Analyst Review").strip()[:120]
+    note_clean = (note or "").strip()[:500]
+    user_clean = (flagged_by or "viewer").strip()[:64]
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE alerts SET flagged_for_review = 1, flag_reason = %s, flag_note = %s, flagged_by = %s, flagged_at = %s WHERE id = %s",
+                    (reason_clean, note_clean, user_clean, now_iso, alert_id),
+                )
+            conn.close()
+            return True
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        conn.execute(
+            "UPDATE alerts SET flagged_for_review = 1, flag_reason = ?, flag_note = ?, flagged_by = ?, flagged_at = ? WHERE id = ?",
+            (reason_clean, note_clean, user_clean, now_iso, alert_id),
+        )
+        conn.commit()
+    return True
+
+
+def clear_alert_flag(
+    alert_id: int,
+    db_path: Path | str | None = None,
+) -> bool:
+    """Clear a Viewer review flag once reviewed by a Security Analyst."""
+    invalidate_aggregate_cache()
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE alerts SET flagged_for_review = 0, flag_reason = NULL, flag_note = NULL, flagged_by = NULL, flagged_at = NULL WHERE id = %s",
+                    (alert_id,),
+                )
+            conn.close()
+            return True
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        conn.execute(
+            "UPDATE alerts SET flagged_for_review = 0, flag_reason = NULL, flag_note = NULL, flagged_by = NULL, flagged_at = NULL WHERE id = ?",
+            (alert_id,),
+        )
+        conn.commit()
+    return True
+
+
+def add_alert_comment(
+    alert_id: int,
+    username: str,
+    role: str,
+    message: str,
+    db_path: Path | str | None = None,
+) -> int:
+    """Append a message to the two-way SOC communication thread on an alert."""
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    user_clean = (username or "operator").strip()[:64]
+    role_clean = (role or "viewer").strip().lower()[:32]
+    msg_clean = (message or "").strip()[:1000]
+    if not msg_clean:
+        raise ValueError("Comment message cannot be empty")
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                if conf.get("is_postgres"):
+                    cur.execute(
+                        "INSERT INTO alert_comments (alert_id, username, role, message, created_at) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                        (alert_id, user_clean, role_clean, msg_clean, now_iso),
+                    )
+                    new_id = int(cur.fetchone()["id"])
+                else:
+                    cur.execute(
+                        "INSERT INTO alert_comments (alert_id, username, role, message, created_at) VALUES (%s, %s, %s, %s, %s)",
+                        (alert_id, user_clean, role_clean, msg_clean, now_iso),
+                    )
+                    new_id = int(cur.lastrowid)
+            conn.close()
+            return new_id
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        cur = conn.execute(
+            "INSERT INTO alert_comments (alert_id, username, role, message, created_at) VALUES (?, ?, ?, ?, ?)",
+            (alert_id, user_clean, role_clean, msg_clean, now_iso),
+        )
+        conn.commit()
+        return int(cur.lastrowid or 0)
+
+
+def get_alert_comments(
+    alert_id: int,
+    db_path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve chronological SOC thread messages for an alert."""
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, alert_id, username, role, message, created_at FROM alert_comments WHERE alert_id = %s ORDER BY id ASC",
+                    (alert_id,),
+                )
+                rows = cur.fetchall()
+            conn.close()
+            return [dict(r) for r in rows]
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        rows = conn.execute(
+            "SELECT id, alert_id, username, role, message, created_at FROM alert_comments WHERE alert_id = ? ORDER BY id ASC",
+            (alert_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def _mark_keys_read(username: str, item_keys: list[str], db_path: Path | str | None = None) -> None:
+    """Persist read markers for a user's notification item keys."""
+    user_clean = (username or "").strip().lower()
+    if not user_clean or not item_keys:
+        return
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                for key in item_keys:
+                    if conf.get("is_postgres"):
+                        cur.execute(
+                            "INSERT INTO notification_reads (username, item_key, read_at) VALUES (%s, %s, %s) "
+                            "ON CONFLICT (username, item_key) DO NOTHING",
+                            (user_clean, key, now_iso),
+                        )
+                    else:
+                        cur.execute(
+                            "INSERT IGNORE INTO notification_reads (username, item_key, read_at) VALUES (%s, %s, %s)",
+                            (user_clean, key, now_iso),
+                        )
+            conn.close()
+            return
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        for key in item_keys:
+            conn.execute(
+                "INSERT OR IGNORE INTO notification_reads (username, item_key, read_at) VALUES (?, ?, ?)",
+                (user_clean, key, now_iso),
+            )
+        conn.commit()
+
+
+def mark_alert_messages_read(alert_id: int, username: str, db_path: Path | str | None = None) -> None:
+    """Mark all SOC thread messages on a specific alert as read for this user."""
+    user_clean = (username or "").strip().lower()
+    if not user_clean:
+        return
+    comments = get_alert_comments(alert_id, db_path=db_path)
+    keys = [f"msg:{c['id']}" for c in comments if str(c.get("username", "")).lower() != user_clean]
+    if keys:
+        _mark_keys_read(user_clean, keys, db_path=db_path)
+
+
+def mark_all_messages_read(username: str, role: str, db_path: Path | str | None = None) -> None:
+    """Mark all currently visible incoming messages as read for this user."""
+    data = get_notifications_for_user(role=role, username=username, limit=50, db_path=db_path)
+    keys = [item["item_key"] for item in data["unread_items"] if item["type"] == "message"]
+    if keys:
+        _mark_keys_read(username, keys, db_path=db_path)
+
+
+def create_password_reset_request(
+    identifier: str,
+    username: str | None = None,
+    email: str | None = None,
+    note: str = "",
+    db_path: Path | str | None = None,
+) -> int:
+    """Record a 'Contact Admin' password reset request submitted from the login page."""
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ident_clean = (identifier or "").strip()[:128]
+    user_clean = (username or "").strip()[:64] or None
+    email_clean = (email or "").strip()[:128] or None
+    note_clean = (note or "").strip()[:400]
+    if not ident_clean:
+        raise ValueError("Username or email is required")
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                if conf.get("is_postgres"):
+                    cur.execute(
+                        "INSERT INTO password_reset_requests (identifier, username, email, note, status, created_at) "
+                        "VALUES (%s, %s, %s, %s, 'pending', %s) RETURNING id",
+                        (ident_clean, user_clean, email_clean, note_clean, now_iso),
+                    )
+                    new_id = int(cur.fetchone()["id"])
+                else:
+                    cur.execute(
+                        "INSERT INTO password_reset_requests (identifier, username, email, note, status, created_at) "
+                        "VALUES (%s, %s, %s, %s, 'pending', %s)",
+                        (ident_clean, user_clean, email_clean, note_clean, now_iso),
+                    )
+                    new_id = int(cur.lastrowid)
+            conn.close()
+            return new_id
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        cur = conn.execute(
+            "INSERT INTO password_reset_requests (identifier, username, email, note, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'pending', ?)",
+            (ident_clean, user_clean, email_clean, note_clean, now_iso),
+        )
+        conn.commit()
+        return int(cur.lastrowid or 0)
+
+
+def resolve_password_reset_requests(
+    username: str | None = None,
+    email: str | None = None,
+    resolved_by: str = "admin",
+    db_path: Path | str | None = None,
+) -> None:
+    """Mark pending password reset requests for a user as resolved once Admin resets their password."""
+    u_clean = (username or "").strip().lower()
+    e_clean = (email or "").strip().lower()
+    if not u_clean and not e_clean:
+        return
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    by_clean = (resolved_by or "admin").strip()[:64]
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE password_reset_requests SET status = 'resolved', resolved_at = %s, resolved_by = %s "
+                    "WHERE status = 'pending' AND ("
+                    "  LOWER(COALESCE(username, '')) = %s OR LOWER(identifier) = %s "
+                    "  OR (%s != '' AND (LOWER(COALESCE(email, '')) = %s OR LOWER(identifier) = %s))"
+                    ")",
+                    (now_iso, by_clean, u_clean, u_clean, e_clean, e_clean, e_clean),
+                )
+            conn.close()
+            return
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+
+    with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+        conn.execute(
+            "UPDATE password_reset_requests SET status = 'resolved', resolved_at = ?, resolved_by = ? "
+            "WHERE status = 'pending' AND ("
+            "  LOWER(COALESCE(username, '')) = ? OR LOWER(identifier) = ? "
+            "  OR (? != '' AND (LOWER(COALESCE(email, '')) = ? OR LOWER(identifier) = ?))"
+            ")",
+            (now_iso, by_clean, u_clean, u_clean, e_clean, e_clean, e_clean),
+        )
+        conn.commit()
+
+
+def get_notifications_for_user(
+    role: str,
+    username: str,
+    limit: int = 16,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Build role-locked top-bar notifications split into Unread/Unsolved and Read/Solved.
+
+    - Admin: ONLY 'Contact Admin' password reset requests (pending vs resolved).
+    - Analyst: ONLY Viewer flags (unsolved vs solved) and SOC Chat messages/mentions.
+    - Viewer: ONLY Analyst replies on alerts they participated in and direct @mentions.
+    """
+    init_db(db_path)
+    engine, conf = _get_active_engine(db_path)
+    role_clean = (role or "viewer").strip().lower()
+    user_clean = (username or "").strip().lower()
+
+    # Admin-only branch: Password Reset Requests
+    if role_clean == "admin":
+        req_rows: list[dict[str, Any]] = []
+        if engine == "mysql":
+            try:
+                conn = get_mysql_connection(conf)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, identifier, username, email, note, status, created_at, resolved_at, resolved_by "
+                        "FROM password_reset_requests ORDER BY id DESC LIMIT 30"
+                    )
+                    req_rows = [dict(r) for r in cur.fetchall()]
+                conn.close()
+            except Exception as exc:
+                _mark_sqlite_fallback(exc)
+                engine = "sqlite"
+        if engine != "mysql":
+            with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+                req_rows = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT id, identifier, username, email, note, status, created_at, resolved_at, resolved_by "
+                        "FROM password_reset_requests ORDER BY id DESC LIMIT 30"
+                    ).fetchall()
+                ]
+
+        unread_items: list[dict[str, Any]] = []
+        read_items: list[dict[str, Any]] = []
+        for r in req_rows:
+            is_resolved = str(r.get("status") or "").lower() == "resolved"
+            target_label = r.get("username") or r.get("identifier") or "operator"
+            entry = {
+                "item_key": f"pwdreq:{r['id']}",
+                "type": "reset_solved" if is_resolved else "reset_request",
+                "state": "solved" if is_resolved else "unsolved",
+                "is_mention": False,
+                "alert_id": None,
+                "actor": target_label,
+                "actor_role": "admin",
+                "title": (
+                    f"Password reset solved for {target_label}"
+                    if is_resolved
+                    else f"Password reset requested by {target_label}"
+                ),
+                "preview": (
+                    f"Resolved by {r.get('resolved_by') or 'admin'}"
+                    if is_resolved
+                    else (r.get("note") or f"Identifier: {r.get('identifier')}")[:90]
+                ),
+                "timestamp": str((r.get("resolved_at") if is_resolved else r.get("created_at")) or ""),
+            }
+            if is_resolved:
+                read_items.append(entry)
+            else:
+                unread_items.append(entry)
+
+        unread_items = unread_items[:limit]
+        read_items = read_items[:limit]
+        return {
+            "items": unread_items + read_items,
+            "unread_items": unread_items,
+            "read_items": read_items,
+            "flag_count": len(unread_items),
+            "message_count": 0,
+            "unread_count": len(unread_items),
+            "read_count": len(read_items),
+            "total_count": len(unread_items),
+        }
+
+    # Analyst & Viewer branch: Flags & SOC Chat Conversations ONLY
+    flag_rows: list[dict[str, Any]] = []
+    msg_rows: list[dict[str, Any]] = []
+    read_keys: set[str] = set()
+    flag_count = 0
+
+    if engine == "mysql":
+        try:
+            conn = get_mysql_connection(conf)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT item_key FROM notification_reads WHERE LOWER(username) = %s",
+                    (user_clean,),
+                )
+                read_keys = {r["item_key"] for r in cur.fetchall()}
+
+                if role_clean == "analyst":
+                    cur.execute("SELECT COUNT(*) as cnt FROM alerts WHERE flagged_for_review = 1")
+                    flag_count = int(cur.fetchone()["cnt"])
+                    cur.execute(
+                        "SELECT id, rule, severity, src_ip, flag_reason, flag_note, flagged_by, flagged_at "
+                        "FROM alerts WHERE flagged_for_review = 1 ORDER BY id DESC LIMIT 12"
+                    )
+                    flag_rows = [dict(r) for r in cur.fetchall()]
+                    cur.execute(
+                        "SELECT c.id, c.alert_id, c.username, c.role, c.message, c.created_at, a.rule "
+                        "FROM alert_comments c LEFT JOIN alerts a ON a.id = c.alert_id "
+                        "WHERE LOWER(c.username) != %s ORDER BY c.id DESC LIMIT 20",
+                        (user_clean,),
+                    )
+                    msg_rows = [dict(r) for r in cur.fetchall()]
+                else:
+                    # Viewer gets notified of Analyst replies on alerts THIS viewer flagged/commented on,
+                    # OR any message that directly @mentions this viewer's username.
+                    mention_like = f"%@{user_clean}%"
+                    cur.execute(
+                        "SELECT c.id, c.alert_id, c.username, c.role, c.message, c.created_at, a.rule "
+                        "FROM alert_comments c LEFT JOIN alerts a ON a.id = c.alert_id "
+                        "WHERE LOWER(c.username) != %s AND ("
+                        "  LOWER(c.message) LIKE %s "
+                        "  OR (LOWER(c.role) IN ('analyst', 'admin') AND ("
+                        "    LOWER(COALESCE(a.flagged_by, '')) = %s OR EXISTS ("
+                        "      SELECT 1 FROM alert_comments mine WHERE mine.alert_id = c.alert_id AND LOWER(mine.username) = %s"
+                        "    )"
+                        "  ))"
+                        ") ORDER BY c.id DESC LIMIT 20",
+                        (user_clean, mention_like, user_clean, user_clean),
+                    )
+                    msg_rows = [dict(r) for r in cur.fetchall()]
+            conn.close()
+        except Exception as exc:
+            _mark_sqlite_fallback(exc)
+            engine = "sqlite"
+
+    if engine != "mysql":
+        with get_sqlite_connection(conf.get("path", DEFAULT_SQLITE_PATH)) as conn:
+            read_keys = {
+                r["item_key"]
+                for r in conn.execute(
+                    "SELECT item_key FROM notification_reads WHERE LOWER(username) = ?",
+                    (user_clean,),
+                ).fetchall()
+            }
+            if role_clean == "analyst":
+                flag_count = int(
+                    conn.execute("SELECT COUNT(*) FROM alerts WHERE flagged_for_review = 1").fetchone()[0]
+                )
+                flag_rows = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT id, rule, severity, src_ip, flag_reason, flag_note, flagged_by, flagged_at "
+                        "FROM alerts WHERE flagged_for_review = 1 ORDER BY id DESC LIMIT 12"
+                    ).fetchall()
+                ]
+                msg_rows = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT c.id, c.alert_id, c.username, c.role, c.message, c.created_at, a.rule "
+                        "FROM alert_comments c LEFT JOIN alerts a ON a.id = c.alert_id "
+                        "WHERE LOWER(c.username) != ? ORDER BY c.id DESC LIMIT 20",
+                        (user_clean,),
+                    ).fetchall()
+                ]
+            else:
+                mention_like = f"%@{user_clean}%"
+                msg_rows = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT c.id, c.alert_id, c.username, c.role, c.message, c.created_at, a.rule "
+                        "FROM alert_comments c LEFT JOIN alerts a ON a.id = c.alert_id "
+                        "WHERE LOWER(c.username) != ? AND ("
+                        "  LOWER(c.message) LIKE ? "
+                        "  OR (LOWER(c.role) IN ('analyst', 'admin') AND ("
+                        "    LOWER(COALESCE(a.flagged_by, '')) = ? OR EXISTS ("
+                        "      SELECT 1 FROM alert_comments mine WHERE mine.alert_id = c.alert_id AND LOWER(mine.username) = ?"
+                        "    )"
+                        "  ))"
+                        ") ORDER BY c.id DESC LIMIT 20",
+                        (user_clean, mention_like, user_clean, user_clean),
+                    ).fetchall()
+                ]
+
+    unread_items: list[dict[str, Any]] = []
+    read_items: list[dict[str, Any]] = []
+
+    for f in flag_rows:
+        unread_items.append(
+            {
+                "item_key": f"flag:{f['id']}",
+                "type": "flag",
+                "state": "unsolved",
+                "alert_id": f["id"],
+                "rule": f.get("rule") or "alert",
+                "actor": f.get("flagged_by") or "viewer",
+                "actor_role": "viewer",
+                "title": f"Alert #{f['id']} flagged ({f.get('flag_reason') or 'Review needed'})",
+                "preview": (f.get("flag_note") or f"Rule: {f.get('rule', '-')} · Source: {f.get('src_ip', '-')}")[:90],
+                "timestamp": str(f.get("flagged_at") or ""),
+            }
+        )
+
+    import re as _re
+    mention_pat = _re.compile(rf"(?i)(?:^|[^A-Za-z0-9_.-])@{_re.escape(user_clean)}(?![A-Za-z0-9_.-])") if user_clean else None
+
+    unread_msg_count = 0
+    for m in msg_rows:
+        key = f"msg:{m['id']}"
+        msg_text = str(m.get("message") or "")
+        is_flag_solved = msg_text.startswith("[Flag Reviewed]")
+        is_mention = bool(mention_pat and mention_pat.search(msg_text))
+        is_read = key in read_keys or is_flag_solved
+        entry = {
+            "item_key": key,
+            "type": "flag_solved" if is_flag_solved else "message",
+            "state": "solved" if is_flag_solved else ("read" if is_read else "unread"),
+            "is_mention": is_mention,
+            "alert_id": m["alert_id"],
+            "rule": m.get("rule") or "alert",
+            "actor": m.get("username") or "operator",
+            "actor_role": m.get("role") or "viewer",
+            "title": (
+                f"Alert #{m['alert_id']} flag solved by {m.get('username')}"
+                if is_flag_solved
+                else (
+                    f"{m.get('username')} mentioned you on Alert #{m['alert_id']}"
+                    if is_mention
+                    else f"Message on Alert #{m['alert_id']} from {m.get('username')}"
+                )
+            ),
+            "preview": msg_text[:90],
+            "timestamp": str(m.get("created_at") or ""),
+        }
+        if is_read:
+            read_items.append(entry)
+        else:
+            unread_msg_count += 1
+            unread_items.append(entry)
+
+    unread_items.sort(key=lambda x: x["timestamp"], reverse=True)
+    read_items.sort(key=lambda x: x["timestamp"], reverse=True)
+    unread_items = unread_items[:limit]
+    read_items = read_items[:limit]
+
+    return {
+        "items": unread_items + read_items,
+        "unread_items": unread_items,
+        "read_items": read_items,
+        "flag_count": flag_count,
+        "message_count": unread_msg_count,
+        "unread_count": flag_count + unread_msg_count,
+        "read_count": len(read_items),
+        "total_count": flag_count + unread_msg_count,
+    }
 
 
 def get_alerts(
@@ -1425,6 +2139,8 @@ def get_alerts(
     status: str | None = None,
     client_name: str | None = None,
     search: str | None = None,
+    flagged: bool | None = None,
+    archived: bool | None = None,
     limit: int = 200,
     offset: int = 0,
     db_path: Path | str | None = None,
@@ -1453,6 +2169,14 @@ def get_alerts(
             if client_name:
                 query += " AND client_name = %s"
                 params.append(client_name)
+            if flagged is True:
+                query += " AND flagged_for_review = 1"
+            elif flagged is False:
+                query += " AND (flagged_for_review IS NULL OR flagged_for_review = 0)"
+            if archived is True:
+                query += " AND status IN ('resolved', 'false_positive')"
+            elif archived is False:
+                query += " AND (status IS NULL OR status NOT IN ('resolved', 'false_positive'))"
             if search:
                 query += " AND (description LIKE %s OR src_ip LIKE %s OR dst_ip LIKE %s OR dst_port LIKE %s OR source_pcap LIKE %s OR client_name LIKE %s OR analyst_note LIKE %s)"
                 term = f"%{search}%"
@@ -1487,6 +2211,14 @@ def get_alerts(
     if client_name:
         query += " AND client_name = ?"
         params.append(client_name)
+    if flagged is True:
+        query += " AND flagged_for_review = 1"
+    elif flagged is False:
+        query += " AND (flagged_for_review IS NULL OR flagged_for_review = 0)"
+    if archived is True:
+        query += " AND status IN ('resolved', 'false_positive')"
+    elif archived is False:
+        query += " AND (status IS NULL OR status NOT IN ('resolved', 'false_positive'))"
     if search:
         query += " AND (description LIKE ? OR src_ip LIKE ? OR dst_ip LIKE ? OR dst_port LIKE ? OR source_pcap LIKE ? OR client_name LIKE ? OR analyst_note LIKE ?)"
         term = f"%{search}%"
@@ -1550,6 +2282,10 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
                 by_sev_rows = cur.fetchall()
                 cur.execute("SELECT rule, COUNT(*) as cnt FROM alerts GROUP BY rule")
                 by_rule_rows = cur.fetchall()
+                cur.execute("SELECT COUNT(*) as cnt FROM alerts WHERE flagged_for_review = 1")
+                flagged_cnt = cur.fetchone()["cnt"]
+                cur.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status IN ('resolved', 'false_positive')")
+                archived_cnt = cur.fetchone()["cnt"]
             conn.close()
 
             by_severity = {row["severity"]: row["cnt"] for row in by_sev_rows}
@@ -1560,6 +2296,8 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
                 "high": by_severity.get("high", 0),
                 "medium": by_severity.get("medium", 0),
                 "low": by_severity.get("low", 0),
+                "flagged": flagged_cnt,
+                "archived": archived_cnt,
                 "by_rule": by_rule,
             }
             if db_path is None:
@@ -1577,6 +2315,12 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
         by_rule_rows = conn.execute(
             "SELECT rule, COUNT(*) as cnt FROM alerts GROUP BY rule"
         ).fetchall()
+        flagged_cnt = conn.execute(
+            "SELECT COUNT(*) FROM alerts WHERE flagged_for_review = 1"
+        ).fetchone()[0]
+        archived_cnt = conn.execute(
+            "SELECT COUNT(*) FROM alerts WHERE status IN ('resolved', 'false_positive')"
+        ).fetchone()[0]
 
         by_severity = {row["severity"]: row["cnt"] for row in by_sev_rows}
         by_rule = {row["rule"]: row["cnt"] for row in by_rule_rows}
@@ -1587,6 +2331,8 @@ def get_summary_stats(db_path: Path | str | None = None) -> dict[str, Any]:
             "high": by_severity.get("high", 0),
             "medium": by_severity.get("medium", 0),
             "low": by_severity.get("low", 0),
+            "flagged": flagged_cnt,
+            "archived": archived_cnt,
             "by_rule": by_rule,
         }
         if db_path is None:
