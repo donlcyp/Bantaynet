@@ -33,7 +33,7 @@
   <!-- Header -->
   <header>
     <div class="navbar">
-      <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <div class="navbar-left">
         {% if current_user %}
         <button type="button" class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Navigation Menu">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -45,7 +45,7 @@
         {% endif %}
         <a href="{{ url_for('index') }}" class="brand">
           <div class="brand-logo-svg" style="display: flex; align-items: center;">
-            <img src="{{ url_for('static', filename='applogo.png') }}" alt="BantayNet Logo" style="height: 36px; width: auto; display: block; object-fit: contain;">
+            <img src="{{ url_for('static', filename='applogo.png') }}" alt="BantayNet Logo" class="brand-logo-img">
           </div>
           <div>
             <div class="brand-name">Bantay<span>Net</span></div>
@@ -192,7 +192,7 @@
           </div>
         </div>
 
-        <div class="nav-user-cluster" style="display: flex; align-items: center; gap: 0.75rem;">
+        <div class="nav-user-cluster">
           <div class="user-greeting" style="font-size: 0.85rem; text-align: right; line-height: 1.2;">
             <span class="user-username" style="font-weight: 600; color: var(--text-main);">{{ current_user.username }}</span>
             <span class="badge role-badge role-badge-{{ current_user.role }}">
@@ -608,6 +608,17 @@
         sb.classList.add('collapsed');
       }
 
+      // Sync sidebar state when crossing desktop/mobile breakpoint
+      window.addEventListener('resize', function() {
+        const sbEl = document.getElementById('appSidebar');
+        const bdEl = document.getElementById('sidebarBackdrop');
+        if (window.innerWidth > 900 && sbEl && sbEl.classList.contains('open')) {
+          sbEl.classList.remove('open');
+          if (bdEl) bdEl.classList.remove('active');
+          document.body.classList.remove('mobile-menu-open');
+        }
+      });
+
       // Auto-close mobile sidebar when clicking a navigation link
       document.querySelectorAll('.sidebar-nav a').forEach(function(link) {
         link.addEventListener('click', function() {
@@ -642,22 +653,10 @@
           if (!banner) {
             banner = document.createElement('div');
             banner.id = 'idleWarningBanner';
-            banner.style.position = 'fixed';
-            banner.style.bottom = '20px';
-            banner.style.right = '20px';
-            banner.style.zIndex = '9999';
-            banner.style.padding = '1rem 1.25rem';
-            banner.style.background = 'rgba(239, 68, 68, 0.95)';
-            banner.style.color = '#ffffff';
-            banner.style.borderRadius = '8px';
-            banner.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
-            banner.style.fontSize = '0.85rem';
-            banner.style.display = 'flex';
-            banner.style.alignItems = 'center';
-            banner.style.gap = '0.75rem';
+            banner.className = 'idle-warning-banner';
             banner.innerHTML = `
               <span>⚠️ <strong>Security Notice:</strong> Inactivity detected. Auto-logout in 60s.</span>
-              <button type="button" id="idleStaySignedInBtn" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; background: #ffffff; color: #000000; border: none;">Stay Signed In</button>
+              <button type="button" id="idleStaySignedInBtn" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; background: #ffffff; color: #000000; border: none;">Stay Signed In</button>
             `;
             document.body.appendChild(banner);
             const stayBtn = document.getElementById('idleStaySignedInBtn');

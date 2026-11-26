@@ -118,7 +118,7 @@
     {% if current_user and current_user.role == 'analyst' and not is_archived %}
     <form action="{{ url_for('update_alert_status', alert_id=alert.id) }}" method="POST" class="triage-form" style="display: flex; flex-direction: column; gap: 0.75rem; flex: 1;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div style="display: grid; grid-template-columns: minmax(190px, 240px) 1fr; gap: 0.85rem; align-items: start;">
+      <div class="triage-form-grid">
         <div>
           <label for="statusSelect" class="triage-label">Incident Status</label>
           <select name="status" id="statusSelect" class="triage-select">
@@ -374,14 +374,13 @@
         id="socChatInput"
         name="message"
         rows="1"
-        class="form-control"
+        class="form-control soc-chat-input"
         maxlength="1000"
         autocomplete="off"
         data-lpignore="true"
         data-1p-ignore="true"
         data-form-type="other"
         required
-        style="flex: 1; height: 34px; min-height: 34px; max-height: 34px; resize: none; overflow: hidden; padding: 0.42rem 0.7rem; font-size: 0.82rem; line-height: 1.35;"
         placeholder="{% if current_user.role == 'viewer' %}Message Analyst (type @ to mention)...{% else %}Reply to Security Monitor (type @ to mention)...{% endif %}"
       ></textarea>
       <button type="submit" class="btn btn-primary btn-sm" style="height: 34px; white-space: nowrap;">

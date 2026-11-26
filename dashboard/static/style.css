@@ -1,4 +1,6 @@
 :root {
+  --header-height: 62px;
+  --sidebar-width: 240px;
   --bg-primary: #0a0e17;
   --bg-secondary: #111827;
   --bg-card: rgba(17, 24, 39, 0.85);
@@ -192,11 +194,20 @@
   padding: 0;
 }
 
+html {
+  width: 100%;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-main);
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: clip;
   line-height: 1.5;
   background-image: 
     radial-gradient(circle at 15% 15%, rgba(14, 165, 233, 0.05) 0%, transparent 40%),
@@ -232,27 +243,42 @@ header {
   position: sticky;
   top: 0;
   z-index: 50;
-  height: 62px;
+  height: var(--header-height);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .navbar {
   width: 100%;
   height: 100%;
-  padding: 0 1.5rem;
+  padding: 0 clamp(0.65rem, 2vw, 1.5rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
 }
 
-
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.45rem, 1.5vw, 0.75rem);
+  min-width: 0;
+}
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: clamp(0.45rem, 1.2vw, 0.75rem);
   text-decoration: none;
   color: var(--text-main);
+  min-width: 0;
+}
+
+.brand-logo-img {
+  height: clamp(28px, 4.5vw, 36px);
+  width: auto;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .brand-icon {
@@ -270,9 +296,11 @@ header {
 }
 
 .brand-name {
-  font-size: 1.3rem;
+  font-size: clamp(1.05rem, 2vw, 1.3rem);
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .brand-name span {
@@ -282,7 +310,14 @@ header {
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: clamp(0.4rem, 1.4vw, 0.9rem);
+  flex-shrink: 0;
+}
+
+.nav-user-cluster {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.4rem, 1.2vw, 0.75rem);
 }
 
 .btn {
@@ -379,19 +414,20 @@ main.container {
 /* Stat Cards */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.25rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 195px), 1fr));
+  gap: clamp(0.75rem, 1.5vw, 1.25rem);
+  margin-bottom: clamp(1.1rem, 2.5vw, 2rem);
 }
 
 .stat-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 1.25rem 1.5rem;
+  padding: clamp(0.9rem, 1.8vw, 1.25rem) clamp(1rem, 2vw, 1.5rem);
   backdrop-filter: blur(10px);
   position: relative;
   overflow: hidden;
+  min-width: 0;
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
@@ -427,9 +463,9 @@ main.container {
 }
 
 .stat-value {
-  font-size: 2.25rem;
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.05;
 }
 
 /* Flash Messages */
@@ -535,30 +571,39 @@ main.container {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 1.35rem;
+  padding: clamp(0.95rem, 2vw, 1.35rem);
   margin-bottom: 1.25rem;
+  min-width: 0;
 }
 
 .panel-title {
-  font-size: 1.1rem;
+  font-size: clamp(0.95rem, 1.6vw, 1.1rem);
   font-weight: 600;
   margin-bottom: 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .filter-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) auto auto;
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+  gap: 0.85rem;
   align-items: end;
+}
+
+.filter-form .btn {
+  justify-content: center;
+  width: 100%;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .form-group label {
@@ -576,6 +621,8 @@ main.container {
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   outline: none;
+  width: 100%;
+  min-width: 0;
   transition: border-color 0.2s, background 0.2s, color 0.2s;
 }
 
@@ -698,7 +745,7 @@ select.form-control option {
 /* 2-Column Alert Workbench (Left: Triage + Details, Right: Full-Height SOC Chat) */
 .alert-workbench-grid {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: 1.25rem;
   margin-bottom: 1.25rem;
   align-items: stretch;
@@ -718,6 +765,7 @@ select.form-control option {
   padding: 1.15rem 1.25rem;
   height: 0;
   min-height: 100%;
+  min-width: 0;
 }
 
 .soc-thread-panel .soc-thread-list {
@@ -731,7 +779,20 @@ select.form-control option {
   margin-top: auto;
 }
 
-@media (max-width: 1024px) {
+.soc-chat-input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  max-height: 80px;
+  resize: none;
+  overflow-y: auto;
+  padding: 0.42rem 0.7rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 1120px) {
   .alert-workbench-grid {
     grid-template-columns: 1fr;
   }
@@ -740,7 +801,7 @@ select.form-control option {
     min-height: 0;
   }
   .soc-thread-panel .soc-thread-list {
-    max-height: 320px;
+    max-height: clamp(200px, 42dvh, 360px);
   }
 }
 
@@ -851,13 +912,14 @@ select.form-control option {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
-  right: 70px;
+  right: 0;
+  max-height: min(220px, 35dvh);
+  overflow-y: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
   z-index: 50;
-  overflow: hidden;
 }
 
 [data-theme="light"] .soc-mention-menu {
@@ -1052,11 +1114,13 @@ select.form-control option {
   display: none;
   position: fixed;
   inset: 0;
+  padding: 1rem;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
   z-index: 100;
   align-items: center;
   justify-content: center;
+  overflow-y: auto;
 }
 
 .modal.active {
@@ -1067,21 +1131,24 @@ select.form-control option {
   background: #111827;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
-  width: 90%;
+  width: 100%;
   max-width: 520px;
-  padding: 2rem;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  padding: clamp(1.15rem, 3vw, 2rem);
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
 }
 
 .drop-zone {
   border: 2px dashed rgba(255, 255, 255, 0.2);
   border-radius: 8px;
-  padding: 2.5rem 1.5rem;
+  padding: clamp(1.25rem, 3.5vh, 2.5rem) 1.25rem;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
   background: rgba(255, 255, 255, 0.02);
-  margin: 1.25rem 0;
+  margin: 1rem 0;
 }
 
 .drop-zone:hover, .drop-zone.dragover {
@@ -1092,18 +1159,43 @@ select.form-control option {
 /* Detail page styles */
 .detail-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
   margin-bottom: 1.25rem;
 }
 
 .detail-grid > .panel {
   margin-bottom: 0;
+  min-width: 0;
+}
+
+.rule-inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.rule-inputs-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.triage-form-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .detail-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 800px) {
-  .detail-grid { grid-template-columns: 1fr; }
-  .filter-form { grid-template-columns: 1fr; }
+  .filter-form { grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
 }
 
 .info-list dt {
@@ -1117,6 +1209,8 @@ select.form-control option {
   font-size: 0.95rem;
   font-weight: 500;
   margin-bottom: 0.25rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .evidence-packet-row {
@@ -1127,7 +1221,7 @@ select.form-control option {
 /* Charts grid and cards */
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
   margin-bottom: 1.5rem;
 }
@@ -1142,12 +1236,14 @@ select.form-control option {
   margin-bottom: 0;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .chart-container {
   position: relative;
-  height: 220px;
+  height: clamp(180px, 26vh, 260px);
   width: 100%;
+  min-width: 0;
 }
 
 /* MITRE ATT&CK badges */
@@ -1185,12 +1281,13 @@ select.form-control option {
  * -------------------------------------------------------------------------- */
 .app-layout {
   display: flex;
-  min-height: calc(100vh - 62px);
+  min-height: calc(100vh - var(--header-height));
+  min-height: calc(100dvh - var(--header-height));
   width: 100%;
 }
 
 .app-sidebar {
-  width: 240px;
+  width: var(--sidebar-width);
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border-color);
   flex-shrink: 0;
@@ -1209,8 +1306,9 @@ select.form-control option {
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 62px;
-  height: calc(100vh - 62px);
+  top: var(--header-height);
+  height: calc(100vh - var(--header-height));
+  height: calc(100dvh - var(--header-height));
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -1295,17 +1393,17 @@ select.form-control option {
 .main-content-wrapper {
   flex: 1;
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .main-content-wrapper main.container {
-  max-width: 1350px;
-  margin: 1.5rem auto;
-  padding: 0 1.5rem;
+  max-width: min(1440px, 100%);
+  margin: clamp(0.85rem, 2vh, 1.5rem) auto;
+  padding: 0 clamp(0.75rem, 2.2vw, 1.5rem);
 }
 
 .app-layout.no-sidebar .main-content-wrapper main.container {
-  max-width: 1200px;
+  max-width: min(1200px, 100%);
 }
 
 .sidebar-toggle-btn {
@@ -1381,12 +1479,13 @@ select.form-control option {
 
   .app-sidebar {
     position: fixed;
-    top: 62px;
+    top: var(--header-height);
     bottom: 0;
     left: 0;
     width: 280px;
     max-width: 85vw;
-    height: calc(100vh - 62px);
+    height: calc(100vh - var(--header-height));
+    height: calc(100dvh - var(--header-height));
     z-index: 90;
     transform: translateX(-100%);
     transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1394,6 +1493,18 @@ select.form-control option {
     background: var(--sidebar-bg);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .app-sidebar.collapsed {
+    width: 280px;
+    overflow-y: auto;
+    border-right-color: var(--border-color);
+  }
+
+  .app-sidebar .sidebar-inner {
+    position: static;
+    height: auto;
+    min-height: 100%;
   }
 
   .app-sidebar.open {
@@ -1704,6 +1815,8 @@ select.form-control option {
   right: 0;
   width: 340px;
   max-width: calc(100vw - 24px);
+  max-height: calc(100vh - var(--header-height) - 24px);
+  max-height: calc(100dvh - var(--header-height) - 24px);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -1820,10 +1933,12 @@ select.form-control option {
 }
 
 .notif-dropdown-list {
-  max-height: 320px;
+  max-height: min(320px, calc(100dvh - var(--header-height) - 180px));
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .notif-item {
@@ -2036,18 +2151,70 @@ select.form-control option {
 }
 
 /* --------------------------------------------------------------------------
- * Comprehensive Mobile & Touch Responsiveness
+ * Comprehensive Width & Height Responsiveness (320px to 2560px+, Any Height)
  * -------------------------------------------------------------------------- */
 
-/* Auth Cards */
+/* Auth & Error Cards */
 .auth-card {
+  width: 100%;
   max-width: 440px;
-  margin: 3rem auto 2rem;
-  padding: 2.5rem;
+  margin: clamp(1rem, 5vh, 3rem) auto clamp(1rem, 3vh, 2rem);
+  padding: clamp(1.25rem, 4vw, 2.5rem);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+.auth-card-wide {
+  max-width: 520px;
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+}
+
+.error-card {
+  width: 100%;
+  max-width: 580px;
+  margin: clamp(1.25rem, 6vh, 3.5rem) auto clamp(1rem, 3vh, 2rem);
+  text-align: center;
+  padding: clamp(1.35rem, 4vw, 2.5rem) clamp(1.1rem, 3.5vw, 2rem);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+.idle-warning-banner {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  max-width: calc(100vw - 32px);
+  z-index: 9999;
+  padding: 0.85rem 1.1rem;
+  background: rgba(239, 68, 68, 0.96);
+  color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.rules-actions-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 1600px) {
+  .main-content-wrapper main.container {
+    max-width: min(1680px, 94%);
+  }
 }
 
 @media (max-width: 768px) {
@@ -2059,11 +2226,15 @@ select.form-control option {
     margin: 1rem auto;
   }
 
-  /* Stat cards - tidy 2x2 grid */
+  /* Stat cards - tidy 2-column grid with balanced last odd card */
   .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.25rem;
+  }
+
+  .stats-grid > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .stat-card {
@@ -2087,7 +2258,7 @@ select.form-control option {
   }
 
   .chart-container {
-    height: 200px;
+    height: clamp(180px, 32vh, 230px);
   }
 
   /* Responsive Filter Form */
@@ -2100,11 +2271,17 @@ select.form-control option {
     width: 100%;
   }
 
-  /* Form Controls Touch Targets (Min 42px touch height) */
-  .form-control,
-  .btn {
+  /* Form Controls Touch Targets (Min 42px touch height, excluding compact table controls) */
+  .form-control:not(.data-table .form-control),
+  .btn:not(.data-table .btn):not(.btn-sm) {
     min-height: 42px;
     font-size: 16px; /* Prevents auto-zoom in iOS Safari */
+  }
+
+  .soc-chat-input {
+    min-height: 40px;
+    height: 40px;
+    font-size: 16px;
   }
 
   /* Detail Grids */
@@ -2114,15 +2291,16 @@ select.form-control option {
   }
 
   /* Rule Config inputs grid */
-  .rule-inputs-grid {
-    grid-template-columns: 1fr !important;
-    gap: 0.65rem !important;
+  .rule-inputs-grid,
+  .rule-inputs-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
   }
 
   /* Triage Form Grid on Alert Details */
   .triage-form-grid {
-    grid-template-columns: 1fr !important;
-    gap: 0.85rem !important;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
   }
 
   .triage-form-grid .btn {
@@ -2136,10 +2314,12 @@ select.form-control option {
   .alert-actions-group .btn,
   .alert-actions-group form {
     width: 100%;
+    justify-content: center;
   }
 
   .alert-actions-group form button {
     width: 100%;
+    justify-content: center;
   }
 
   /* Tables horizontal scrolling */
@@ -2158,10 +2338,32 @@ select.form-control option {
   }
 
   /* Flash notification banners */
+  .alert-flash {
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+  }
+
   .alert {
     padding: 0.75rem 1rem;
     font-size: 0.85rem;
     margin-bottom: 1rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .notif-dropdown {
+    position: fixed;
+    top: calc(var(--header-height) + 6px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+  }
+
+  .rules-actions-bar .btn {
+    flex: 1 1 140px;
+    justify-content: center;
   }
 }
 
@@ -2176,7 +2378,7 @@ select.form-control option {
   }
 
   .brand-name {
-    font-size: 1.15rem;
+    font-size: 1.1rem;
   }
 
   .user-username {
@@ -2189,45 +2391,141 @@ select.form-control option {
 
   .nav-signout-btn {
     padding: 0.45rem !important;
-    min-height: 38px;
-    min-width: 38px;
+    min-height: 36px !important;
+    min-width: 36px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
   }
 
   .theme-toggle-btn {
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
   }
 
   /* Mobile Auth Card */
-  .auth-card {
-    margin: 1rem 0.25rem;
-    padding: 1.35rem 1rem;
+  .auth-card,
+  .error-card {
+    margin: 0.85rem auto;
+    padding: 1.25rem 1rem;
     border-radius: 10px;
-    width: auto;
+    width: 100%;
     box-sizing: border-box;
   }
 
   /* Modal */
   .modal-content {
-    width: 95%;
     padding: 1.25rem 1rem;
-    margin: 0.5rem;
-    max-height: 90vh;
-    overflow-y: auto;
     border-radius: 10px;
   }
 
-  .dropzone {
-    padding: 1.5rem 0.75rem;
+  .drop-zone {
+    padding: 1.35rem 0.75rem;
   }
 
   /* Password Checklist */
   .password-checklist {
     padding: 0.65rem 0.85rem;
     font-size: 0.78rem;
+  }
+
+  .viewer-flag-bar > * {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .soc-thread-form {
+    gap: 0.4rem;
+  }
+}
+
+/* Ultra-narrow screens (e.g. 320px - 400px) */
+@media (max-width: 400px) {
+  .role-badge {
+    display: none;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid > :last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+
+  .brand-name {
+    font-size: 1rem;
+  }
+
+  .idle-warning-banner {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
+  }
+}
+
+/* Short viewports & landscape mobile (Height responsiveness) */
+@media (max-height: 640px) {
+  :root {
+    --header-height: 54px;
+  }
+
+  .main-content-wrapper main.container {
+    margin: 0.75rem auto;
+  }
+
+  .panel {
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .stats-grid {
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .stat-card {
+    padding: 0.75rem 1rem;
+  }
+
+  .chart-container {
+    height: 175px;
+  }
+
+  .auth-card,
+  .error-card {
+    margin: 0.75rem auto;
+    padding: 1.25rem 1.35rem;
+  }
+
+  .sidebar-inner {
+    padding: 0.75rem 0.75rem;
+  }
+
+  .sidebar-nav {
+    margin-bottom: 0.75rem;
+  }
+
+  .sidebar-item {
+    padding: 0.45rem 0.75rem;
+  }
+}
+
+@media (max-height: 480px) {
+  :root {
+    --header-height: 48px;
+  }
+
+  .chart-container {
+    height: 150px;
+  }
+
+  .drop-zone {
+    padding: 1rem 0.75rem;
+    margin: 0.65rem 0;
   }
 }
 
@@ -2236,10 +2534,10 @@ select.form-control option {
    ========================================================================== */
 .bantay-loading-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
+  inset: 0;
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
   background: rgba(10, 15, 26, 0.75);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);

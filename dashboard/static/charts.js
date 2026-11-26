@@ -168,6 +168,7 @@
           : [0];
       const palette = ["#ef4444", "#f59e0b", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#10b981"];
 
+      const isCompact = window.innerWidth < 560;
       const chart3 = new Chart(ctxRule, {
         type: "doughnut",
         data: {
@@ -186,8 +187,8 @@
           maintainAspectRatio: false,
           plugins: {
             legend: {
-              position: "right",
-              labels: { boxWidth: 10, padding: 8, color: colors.textMuted },
+              position: isCompact ? "bottom" : "right",
+              labels: { boxWidth: 10, padding: isCompact ? 6 : 8, color: colors.textMuted },
             },
             tooltip: {
               backgroundColor: "rgba(15, 23, 42, 0.95)",
@@ -271,6 +272,25 @@
 
   window.addEventListener("themeChanged", function () {
     initCharts();
+  });
+
+  let lastCompact = window.innerWidth < 560;
+  let resizeTimer = null;
+  window.addEventListener("resize", function () {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      const isCompact = window.innerWidth < 560;
+      if (isCompact !== lastCompact) {
+        lastCompact = isCompact;
+        initCharts();
+      } else {
+        activeCharts.forEach(function (c) {
+          try {
+            c.resize();
+          } catch (e) {}
+        });
+      }
+    }, 150);
   });
 
   document.addEventListener("DOMContentLoaded", function () {

@@ -3,7 +3,7 @@
 {% block title %}{{ error_code }} {{ error_title }} - BantayNet Security{% endblock %}
 
 {% block content %}
-<div style="max-width: 580px; margin: 3.5rem auto 2rem; text-align: center; padding: 2.5rem 2rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);">
+<div class="error-card">
   <div style="display: inline-flex; align-items: center; justify-content: center; width: 72px; height: 72px; border-radius: 50%; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); margin-bottom: 1.25rem;">
     {% if error_code == 403 %}
       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
